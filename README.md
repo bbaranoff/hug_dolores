@@ -1,3 +1,5 @@
+Interested, star her ! When sufficient stars then may i will make her open source.
+
 # Dolores v5 LoRA
 
 Ce dépôt contient le **script et le template** pour utiliser **Dolores v5 LoRA** avec LLaMA 3.1-Instruct. Le LoRA permet de spécialiser le modèle sur tes données d’instructions tout en gardant la base de LLaMA.
