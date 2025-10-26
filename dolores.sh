@@ -32,7 +32,7 @@ fi
 
 # Serve silencieux + prompt
 echo "[+] Lancement $IMAGE (modèle=$MODEL, port=$PORT)…"
-exec docker run -it --rm \
+exec docker run -t --rm \
   "${GPU_FLAG[@]}" \
   -p "$PORT:$PORT" \
   -v "$VOL":/root/.ollama \
