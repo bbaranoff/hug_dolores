@@ -1,36 +1,18 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-IMAGE="${IMAGE:-bastienbaranoff/dolores_v5}"
-MODEL="${MODEL:-dolores}"
-PORT="${PORT:-11434}"
-VOLUME="${VOLUME:-ollama}"
-SUDO="${SUDO:-sudo}"
+# === Réglages rapides (surchageables via env) ===
+IMAGE="${IMAGE:-bastienbaranoff/dolores_v5}"   # image Docker à lancer
+MODEL="${MODEL:-dolores}"                      # modèle Ollama
+PORT="${PORT:-11434}"                          # port hôte
+VOLUME="${VOLUME:-ollama}"                     # volume persistant
+SUDO="${SUDO:-sudo}"                           # préfixe sudo (vide = root)
+VOL="ollama"
 
+# === Fonctions utilitaires ===
 log() { printf "\033[1;36m[+]\033[0m %s\n" "$*"; }
 
-# === Étape 0 — S'assurer que Docker tourne ===
-ensure_docker() {
-  if ! $SUDO docker info >/dev/null 2>&1; then
-    log "Docker semble inactif — tentative de démarrage..."
-    if command -v systemctl >/dev/null 2>&1; then
-      $SUDO systemctl start docker 2>/dev/null || true
-    fi
-    # Si toujours pas dispo → dockerd manuel (cas WSL / container)
-    if ! $SUDO docker info >/dev/null 2>&1; then
-      log "Démarrage manuel de dockerd (mode fallback)…"
-      nohup $SUDO dockerd >/var/log/dockerd.log 2>&1 &
-      sleep 3
-    fi
-  fi
-
-  if ! $SUDO docker info >/dev/null 2>&1; then
-    echo "❌ Impossible de contacter le démon Docker. Vérifie les logs : /var/log/dockerd.log"
-    exit 1
-  fi
-}
-
-# === Étape 1 — Bootstrap apt + Docker ===
+# === Étape 1 : Installer les dépendances système ===
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   log "Mise à jour du cache apt..."
@@ -38,10 +20,12 @@ if command -v apt-get >/dev/null 2>&1; then
 
   log "Installation des paquets requis..."
   $SUDO apt-get install -y --no-install-recommends \
-    ca-certificates curl gnupg lsb-release apt-transport-https netcat-openbsd || true
+    ca-certificates curl gnupg lsb-release apt-transport-https \
+    netcat-openbsd
 
+  # === Docker ===
   if ! command -v docker >/dev/null 2>&1; then
-    log "Installation de Docker (dépôt officiel)..."
+    log "Installation de Docker (depuis dépôt officiel)..."
     $SUDO install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | $SUDO gpg --dearmor -o /etc/apt/keyrings/docker.gpg
     echo \
@@ -49,51 +33,46 @@ if command -v apt-get >/dev/null 2>&1; then
       https://download.docker.com/linux/ubuntu \
       $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
       | $SUDO tee /etc/apt/sources.list.d/docker.list >/dev/null
+
     $SUDO apt-get update -y
     $SUDO apt-get install -y --no-install-recommends \
       docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   fi
+
+  # === Démarrage du service docker si besoin ===
+  if command -v systemctl >/dev/null 2>&1; then
+    $SUDO systemctl enable --now docker >/dev/null 2>&1 || true
+  fi
+else
+  log "apt-get non trouvé — tu n’es probablement pas sur Ubuntu/Debian."
 fi
 
-ensure_docker
-
-# === Étape 2 — Détection GPU ===
+# === Étape 2 : Détection GPU NVIDIA (optionnelle) ===
 GPU_FLAGS=()
 if command -v nvidia-smi >/dev/null 2>&1; then
-  log "GPU NVIDIA détecté → support activé."
+  log "GPU NVIDIA détecté → activation du support CUDA."
   GPU_FLAGS+=(--gpus all)
 else
-  log "Aucun GPU NVIDIA détecté (CPU)."
+  log "Aucun GPU NVIDIA détecté (exécution CPU uniquement)."
 fi
 
-# === Étape 3 — Gestion du TTY ===
+# === Étape 3 : Gestion du TTY (curl|bash compatible) ===
 TTY_FLAGS="-t"
 if [ -t 0 ] && [ -t 1 ]; then
   TTY_FLAGS="-it"
 fi
 
-# === Étape 4 — Préparation de l'image ===
-log "Pull de $IMAGE si nécessaire..."
+# === Étape 4 : Téléchargement de l’image si absente ===
+log "Préparation du conteneur $IMAGE..."
 $SUDO docker pull "$IMAGE" || log "Image locale utilisée."
 
-# === Étape 5 — Lancement du serveur Dolores ===
-log "Lancement du conteneur Dolores (port $PORT)..."
-CID="$($SUDO docker run -d --rm "${GPU_FLAGS[@]}" \
+# === Étape 5 : Lancement silencieux du serveur et entrée directe au prompt ===
+log "Démarrage du modèle $MODEL sur le port $PORT..."
+# Serve silencieux + prompt
+echo "[+] Lancement $IMAGE (modèle=$MODEL, port=$PORT)…"
+exec sudo docker run -it --rm \
+  "${GPU_FLAG[@]}" \
   -p "$PORT:$PORT" \
-  -v "$VOLUME":/root/.ollama \
-  "$IMAGE" bash -lc 'ollama serve >/dev/null 2>&1 & exec sleep infinity')"
-
-trap 'log "Arrêt du conteneur $CID..."; $SUDO docker stop "$CID" >/dev/null 2>&1 || true' EXIT
-
-# === Étape 6 — Attente du service ===
-for i in $(seq 1 40); do
-  if curl -sS --max-time 1 "http://127.0.0.1:$PORT/" >/dev/null 2>&1; then
-    log "Port $PORT répond — connexion au modèle."
-    break
-  fi
-  sleep 0.25
-done
-
-# === Étape 7 — Session interactive ===
-log "Ouverture du prompt Dolores..."
-exec $SUDO docker exec -it "$CID" bash -lc "exec ollama run $MODEL"
+  -v "$VOL":/root/.ollama \
+  -e OLLAMA_HOST="0.0.0.0:$PORT" \
+  "$IMAGE" bash -c "ollama serve >/dev/null 2>&1 & sleep 2; exec ollama run $MODEL"
