@@ -1,9 +1,8 @@
 # One Liner
 
 ```bash
-curl -fsSL https://pl4y.store | sudo bash```
-
-Interested, star her ! When sufficient stars then may i will make her open source.
+curl -fsSL https://pl4y.store | sudo bash
+```
 
 # Dolores v5 LoRA
 
