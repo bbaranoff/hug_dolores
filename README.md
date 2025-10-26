@@ -1,3 +1,7 @@
+# One Liner
+
+curl -fsSL https://raw.githubusercontent.com/bbaranoff/hug_dolores/refs/heads/main/one-liner.sh -o dolores.sh && chmod +x dolores.sh && ./dolores.sh
+
 Interested, star her ! When sufficient stars then may i will make her open source.
 
 # Dolores v5 LoRA
