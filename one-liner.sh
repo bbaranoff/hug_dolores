@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ====== Paramètres (surchargables) ======
-IMAGE="${IMAGE:-dolores_v5}"          # image Docker à utiliser
+IMAGE="${IMAGE:bastienbaranoff/dolores_v5}"          # image Docker à utiliser
 MODEL="${MODEL:-dolores}"             # modèle Ollama à lancer
 PORT="${PORT:-11434}"                 # port API
 VOL="${VOL:-ollama}"                  # volume Docker pour le cache modèles
