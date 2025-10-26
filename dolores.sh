@@ -1,40 +1,47 @@
 #!/usr/bin/env bash
-set -eo pipefail
+set -euo pipefail
 
+# === [ COULEURS ] ===
+green() { printf '\033[1;32m%s\033[0m\n' "$*"; }
+yellow() { printf '\033[1;33m%s\033[0m\n' "$*"; }
+red() { printf '\033[1;31m%s\033[0m\n' "$*"; }
+
+# === [ PARAMÈTRES PAR DÉFAUT ] ===
 IMAGE="bastienbaranoff/dolores_v5"
 MODEL="dolores"
-PORT="11434"
-VOL="ollama"
+PORT="${PORT:-11434}"
+VOL="${VOL:-ollama}"
 
-have(){ command -v "$1" >/dev/null 2>&1; }
-
-# Installe Docker si absent (Ubuntu/Debian)
-if ! have docker; then
-  echo "[+] Installation Docker…"
-  sudo apt-get update -y
-  sudo apt-get install -y docker.io
-fi
-
-# GPU auto
+# === [ DÉTECTION GPU NVIDIA ] ===
 GPU_FLAG=()
-if have nvidia-smi; then
-  echo "[+] GPU NVIDIA détecté → --gpus all"
+if command -v nvidia-smi >/dev/null 2>&1; then
+  green "[+] GPU NVIDIA détecté → utilisation de --gpus all"
   GPU_FLAG=(--gpus all)
 else
-  echo "[!] Pas de GPU détecté → CPU"
+  yellow "[!] Aucun GPU NVIDIA détecté → exécution CPU"
 fi
 
-# Pull si nécessaire
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "[+] Pull $IMAGE…"
-  docker pull "$IMAGE"
+# === [ GESTION DU TTY ] ===
+if [ -t 1 ]; then
+  TTY_FLAG="-t"
+else
+  TTY_FLAG=""
 fi
 
-# Serve silencieux + prompt
-echo "[+] Lancement $IMAGE (modèle=$MODEL, port=$PORT)…"
-exec docker run -i --rm \
+# === [ RÉSUMÉ ] ===
+green "[+] Lancement du modèle : $MODEL"
+green "    Image  : $IMAGE"
+green "    Port   : $PORT"
+green "    Volume : $VOL"
+
+# === [ EXÉCUTION DOCKER ] ===
+exec docker run -i $TTY_FLAG --rm \
   "${GPU_FLAG[@]}" \
   -p "$PORT:$PORT" \
   -v "$VOL":/root/.ollama \
   -e OLLAMA_HOST="0.0.0.0:$PORT" \
-  "$IMAGE" bash -c "ollama serve >/dev/null 2>&1 & sleep 2; exec ollama run $MODEL"
+  "$IMAGE" bash -c '
+    ollama serve >/dev/null 2>&1 &
+    sleep 2
+    exec ollama run "$MODEL"
+  '
