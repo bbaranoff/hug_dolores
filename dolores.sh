@@ -35,7 +35,7 @@ if command -v apt-get >/dev/null 2>&1; then
 
     $SUDO apt-get update -y
     $SUDO apt-get install -y --no-install-recommends \
-      docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin netcat
   fi
 
   # === Démarrage du service docker si besoin ===
