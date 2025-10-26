@@ -48,6 +48,9 @@ else
 fi
 
 # === Étape 2 : Détection GPU NVIDIA (optionnelle) ===
+$SUDO  apt-get install -y nvidia-container-toolkit
+$SUDO nvidia-ctk runtime configure --runtime=docker
+$SUDO systemctl restart docker
 GPU_FLAGS=()
 if command -v nvidia-smi >/dev/null 2>&1; then
   log "GPU NVIDIA détecté → activation du support CUDA."
