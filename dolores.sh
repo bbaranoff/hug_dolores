@@ -1,47 +1,31 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
-# === [ COULEURS ] ===
-green() { printf '\033[1;32m%s\033[0m\n' "$*"; }
-yellow() { printf '\033[1;33m%s\033[0m\n' "$*"; }
-red() { printf '\033[1;31m%s\033[0m\n' "$*"; }
+# === Réglages rapides (surchageables via env) ===
+IMAGE="${IMAGE:-bastienbaranoff/dolores_v5}"   # nom de l'image Docker
+MODEL="${MODEL:-dolores}"                      # nom du modèle Ollama
+PORT="${PORT:-11434}"                          # port hôte
+VOLUME="${VOLUME:-ollama}"                     # volume pour /root/.ollama
+SUDO="${SUDO:-sudo}"                           # préfixe sudo (mettre SUDO= pour le désactiver)
 
-# === [ PARAMÈTRES PAR DÉFAUT ] ===
-IMAGE="bastienbaranoff/dolores_v5"
-MODEL="dolores"
-PORT="${PORT:-11434}"
-VOL="${VOL:-ollama}"
-
-# === [ DÉTECTION GPU NVIDIA ] ===
-GPU_FLAG=()
+# === Détection GPU NVIDIA (optionnelle) ===
+GPU_FLAGS=()
 if command -v nvidia-smi >/dev/null 2>&1; then
-  green "[+] GPU NVIDIA détecté → utilisation de --gpus all"
-  GPU_FLAG=(--gpus all)
-else
-  yellow "[!] Aucun GPU NVIDIA détecté → exécution CPU"
+  GPU_FLAGS+=(--gpus all)
 fi
 
-# === [ GESTION DU TTY ] ===
-if [ -t 1 ]; then
-  TTY_FLAG="-t"
-else
-  TTY_FLAG=""
+# === TTY smart: -it si terminal interactif, sinon -t (compatible curl|bash) ===
+TTY_FLAGS="-t"
+if [ -t 0 ] && [ -t 1 ]; then
+  TTY_FLAGS="-it"
 fi
 
-# === [ RÉSUMÉ ] ===
-green "[+] Lancement du modèle : $MODEL"
-green "    Image  : $IMAGE"
-green "    Port   : $PORT"
-green "    Volume : $VOL"
-
-# === [ EXÉCUTION DOCKER ] ===
-exec docker run -i $TTY_FLAG --rm \
-  "${GPU_FLAG[@]}" \
+# === Run: lance le serveur en arrière-plan, puis entre direct au prompt du modèle ===
+exec $SUDO docker run --rm "${GPU_FLAGS[@]}" $TTY_FLAGS \
   -p "$PORT:$PORT" \
-  -v "$VOL":/root/.ollama \
-  -e OLLAMA_HOST="0.0.0.0:$PORT" \
-  "$IMAGE" bash -c '
-    ollama serve >/dev/null 2>&1 &
-    sleep 2
-    exec ollama run "$MODEL"
+  -v "$VOLUME":/root/.ollama \
+  "$IMAGE" bash -lc '
+    ollama serve >/dev/null 2>&1 &               # pas de logs
+    sleep 2                                       # petit délai de chauffe
+    exec ollama run '"$MODEL"'
   '
