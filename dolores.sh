@@ -2,51 +2,76 @@
 set -Eeuo pipefail
 
 # === Réglages rapides (surchageables via env) ===
-IMAGE="${IMAGE:-bastienbaranoff/dolores_v5}"   # nom de l'image Docker
-MODEL="${MODEL:-dolores}"                      # nom du modèle Ollama
+IMAGE="${IMAGE:-bastienbaranoff/dolores_v5}"   # image Docker à lancer
+MODEL="${MODEL:-dolores}"                      # modèle Ollama
 PORT="${PORT:-11434}"                          # port hôte
-VOLUME="${VOLUME:-ollama}"                     # volume pour /root/.ollama
-SUDO="${SUDO:-sudo}"                           # préfixe sudo (mettre SUDO= pour le désactiver)
+VOLUME="${VOLUME:-ollama}"                     # volume persistant
+SUDO="${SUDO:-sudo}"                           # préfixe sudo (vide = root)
 
-# === Bootstrap apt: installe les paquets nécessaires si absents ===
-ensure_apt_pkg() {
-  local pkg="$1"
-  if ! dpkg -s "$pkg" >/dev/null 2>&1; then
-    export DEBIAN_FRONTEND=noninteractive
-    $SUDO apt-get update -y
-    $SUDO apt-get install -y --no-install-recommends "$pkg"
-  fi
-}
+# === Fonctions utilitaires ===
+log() { printf "\033[1;36m[+]\033[0m %s\n" "$*"; }
 
+# === Étape 1 : Installer les dépendances système ===
 if command -v apt-get >/dev/null 2>&1; then
-  # curl pour récupérer des scripts, docker.io pour exécuter le conteneur
-  command -v curl   >/dev/null 2>&1 || ensure_apt_pkg curl
-  command -v docker >/dev/null 2>&1 || ensure_apt_pkg docker.io
+  export DEBIAN_FRONTEND=noninteractive
+  log "Mise à jour du cache apt..."
+  $SUDO apt-get update -y
 
-  # Démarrer le service Docker si systemd est dispo (ignore les erreurs hors-systemd)
+  log "Installation des paquets requis..."
+  $SUDO apt-get install -y --no-install-recommends \
+    ca-certificates curl gnupg lsb-release apt-transport-https \
+    netcat-openbsd
+
+  # === Docker ===
+  if ! command -v docker >/dev/null 2>&1; then
+    log "Installation de Docker (depuis dépôt officiel)..."
+    $SUDO install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | $SUDO gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+      https://download.docker.com/linux/ubuntu \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+      | $SUDO tee /etc/apt/sources.list.d/docker.list >/dev/null
+
+    $SUDO apt-get update -y
+    $SUDO apt-get install -y --no-install-recommends \
+      docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  fi
+
+  # === Démarrage du service docker si besoin ===
   if command -v systemctl >/dev/null 2>&1; then
     $SUDO systemctl enable --now docker >/dev/null 2>&1 || true
   fi
+else
+  log "apt-get non trouvé — tu n’es probablement pas sur Ubuntu/Debian."
 fi
 
-# === Détection GPU NVIDIA (optionnelle) ===
+# === Étape 2 : Détection GPU NVIDIA (optionnelle) ===
 GPU_FLAGS=()
 if command -v nvidia-smi >/dev/null 2>&1; then
+  log "GPU NVIDIA détecté → activation du support CUDA."
   GPU_FLAGS+=(--gpus all)
+else
+  log "Aucun GPU NVIDIA détecté (exécution CPU uniquement)."
 fi
 
-# === TTY smart: -it si terminal interactif, sinon -t (fixe l’erreur via curl|bash) ===
+# === Étape 3 : Gestion du TTY (curl|bash compatible) ===
 TTY_FLAGS="-t"
 if [ -t 0 ] && [ -t 1 ]; then
   TTY_FLAGS="-it"
 fi
 
-# === Run: lance le serveur en arrière-plan, puis entre direct au prompt du modèle ===
+# === Étape 4 : Téléchargement de l’image si absente ===
+log "Préparation du conteneur $IMAGE..."
+$SUDO docker pull "$IMAGE" || log "Image locale utilisée."
+
+# === Étape 5 : Lancement silencieux du serveur et entrée directe au prompt ===
+log "Démarrage du modèle $MODEL sur le port $PORT..."
 exec $SUDO docker run --rm "${GPU_FLAGS[@]}" $TTY_FLAGS \
   -p "$PORT:$PORT" \
   -v "$VOLUME":/root/.ollama \
-  "$IMAGE" bash -lc '
-    ollama serve >/dev/null 2>&1 &               # pas de logs
-    for i in {1..20}; do sleep 0.2; nc -z 127.0.0.1 '"$PORT"' && break || true; done
-    exec ollama run '"$MODEL"'
-  '
+  "$IMAGE" bash -lc "
+    ollama serve >/dev/null 2>&1 &                 # lancement silencieux du serveur
+    for i in {1..20}; do sleep 0.3; nc -z 127.0.0.1 $PORT && break || true; done
+    exec ollama run $MODEL
+  "
