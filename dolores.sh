@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
 set -Eeo pipefail
 
-IMAGE="${IMAGE:-bastienbaranoff/dolores_v5}"
-MODEL="${MODEL:-dolores}"
-PORT="${PORT:-11434}"
-VOLUME="${VOLUME:-ollama}"
-SUDO="${SUDO:-sudo}"
-AUTO_GPU_LIMIT="${AUTO_GPU_LIMIT:-70}"
+# === Réglages rapides (surchageables via env) ===
+IMAGE="${IMAGE:-bastienbaranoff/dolores_v5}"   # image Docker
+MODEL="${MODEL:-dolores}"                      # modèle unique (non modifié)
+PORT="${PORT:-11434}"                          # port d'écoute
+VOLUME="${VOLUME:-ollama}"                     # volume persistant
+SUDO="${SUDO:-sudo}"                           # préfixe sudo (vide si root)
+AUTO_GPU_LIMIT="${AUTO_GPU_LIMIT:-70}"         # % de puissance max (indicatif)
 VOL="ollama"
 
-log(){ printf "\033[1;36m[+]\033[0m %s\n" "$*"; }
-error(){ printf "\033[1;31m[✖]\033[0m %s\n" "$*"; exit 1; }
+# === Utilitaires ===
+log()   { printf "\033[1;36m[+]\033[0m %s\n" "$*"; }
+error() { printf "\033[1;31m[✖]\033[0m %s\n" "$*"; exit 1; }
 trap 'log "⚠️  Une étape a échoué, poursuite du script..."' ERR
 
 log "=== Initialisation de Dolores (image: $IMAGE, modèle: $MODEL) ==="
 
-# --- Dépendances de base ---
+# === Étape 1 : Dépendances de base ===
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   log "Mise à jour du cache apt..."
@@ -27,7 +29,7 @@ else
   error "apt-get non trouvé — environnement non Debian/Ubuntu. Arrêt."
 fi
 
-# --- Docker ---
+# === Étape 2 : Docker ===
 if ! command -v docker >/dev/null 2>&1; then
   log "Installation de Docker..."
   $SUDO install -m 0755 -d /etc/apt/keyrings
@@ -43,56 +45,65 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 $SUDO systemctl restart docker || true
 
-# --- Vérification GPU sur l’hôte ---
+# === Étape 3 : Vérification GPU + limites indicatives ===
 if ! command -v nvidia-smi >/dev/null 2>&1; then
   error "Aucun pilote NVIDIA détecté sur l’hôte.
-Installez d’abord les pilotes NVIDIA officiels, puis relancez le script.
-Référence : https://developer.nvidia.com/cuda-downloads"
+Installez d’abord les pilotes NVIDIA officiels : https://developer.nvidia.com/cuda-downloads"
 fi
 
-# --- GPU : limitation adaptative sécurisée ---
-# --- GPU : détection et compatibilité mobile ---
 GPU_FLAGS=()
 if nvidia-smi >/dev/null 2>&1; then
   log "GPU NVIDIA détecté — utilisation directe."
 
+  # Puissance (souvent N/A sur laptops) → valeur symbolique
   RAW_POWER=$(nvidia-smi --query-gpu=power.limit --format=csv,noheader,nounits 2>/dev/null | head -n1)
-
-  if [[ -z "$RAW_POWER" || "$RAW_POWER" == *"N/A"* ]]; then
+  if [[ -z "$RAW_POWER" || "$RAW_POWER" == *"N/A"* || ! "$RAW_POWER" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
     log "⚠️  Puissance non lisible sur GPU mobile (${RAW_POWER:-vide}) — valeur par défaut 100 W."
     MAX_POWER=100
   else
     MAX_POWER=${RAW_POWER%.*}
   fi
-
-  # On ne tente pas de changer la limite : c’est verrouillé sur GPU laptop.
-  AUTO_GPU_LIMIT=${AUTO_GPU_LIMIT:-70}
-  if ! [[ "$AUTO_GPU_LIMIT" =~ ^[0-9]+$ ]]; then AUTO_GPU_LIMIT=70; fi
+  [[ "$AUTO_GPU_LIMIT" =~ ^[0-9]+$ ]] || AUTO_GPU_LIMIT=70
   LIMIT_POWER=$((MAX_POWER * AUTO_GPU_LIMIT / 100))
+  log "Mode GPU actif (limite symbolique ${LIMIT_POWER} W)."
 
-  log "Mode GPU actif (limite symbolique ${LIMIT_POWER} W, carte mobile détectée)."
   GPU_FLAGS+=(--gpus all)
 else
-  error "❌ Aucun GPU NVIDIA détecté ou communication impossible.
-Vérifiez vos pilotes NVIDIA avant de relancer."
+  error "❌ Échec de la communication avec le GPU. Vérifiez vos pilotes NVIDIA."
 fi
 
-# --- TTY ---
+# === Étape 4 : Détection VRAM → OLLAMA_MAX_VRAM_GB ===
+RAW_MEM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -n1)
+if [[ -z "$RAW_MEM" || ! "$RAW_MEM" =~ ^[0-9]+$ ]]; then
+  log "⚠️  VRAM illisible (${RAW_MEM:-vide}) — OLLAMA_MAX_VRAM_GB=2 par sécurité."
+  GPU_MEM_GB=2
+else
+  GPU_MEM_GB=$((RAW_MEM / 1024))
+  # headroom minimal de 1 Go si possible pour éviter OOM lors du chargement
+  if [ "$GPU_MEM_GB" -gt 1 ]; then
+    GPU_MEM_GB=$((GPU_MEM_GB - 1))
+  fi
+  if [ "$GPU_MEM_GB" -lt 1 ]; then GPU_MEM_GB=1; fi
+  log "VRAM détectée : ${RAW_MEM} MiB → OLLAMA_MAX_VRAM_GB=${GPU_MEM_GB}"
+fi
+
+# === Étape 5 : Gestion du TTY ===
 TTY_FLAGS="-t"
 if [ -t 0 ] && [ -t 1 ]; then TTY_FLAGS="-it"; fi
 
-# --- Image ---
+# === Étape 6 : Image ===
 log "Préparation du conteneur $IMAGE..."
 $SUDO docker pull "$IMAGE" >/dev/null 2>&1 || log "Image locale utilisée."
 
-# --- Lancement ---
+# === Étape 7 : Lancement (modèle inchangé) ===
 log "Lancement du modèle $MODEL sur le port $PORT..."
-log "✅ Dolores est opérationnelle sur le port $PORT."
-
 $SUDO docker run $TTY_FLAGS --rm \
   "${GPU_FLAGS[@]}" \
   -p "$PORT:$PORT" \
   -v "$VOL":/root/.ollama \
   -e OLLAMA_HOST="0.0.0.0:$PORT" \
-  "$IMAGE" bash -c "ollama serve >/dev/null 2>&1 & sleep 3; exec ollama run $MODEL" || 
+  -e OLLAMA_MAX_VRAM_GB="$GPU_MEM_GB" \
+  "$IMAGE" bash -c "ollama serve >/dev/null 2>&1 & sleep 3; exec ollama run $MODEL" || \
   log "⚠️  Le conteneur n’a pas pu démarrer. Vérifie 'sudo docker ps -a'."
+
+log "✅ Dolores est opérationnelle sur le port $PORT."
