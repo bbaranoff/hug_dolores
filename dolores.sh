@@ -44,9 +44,9 @@ if ! command -v docker >/dev/null 2>&1; then
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
 $SUDO service docker stop
-sleep 2
+sleep 5
 $SUDO service docker start
-sleep 2
+sleep 5
 # === Étape 3 : Vérification GPU + limites indicatives ===
 if ! command -v nvidia-smi >/dev/null 2>&1; then
   error "Aucun pilote NVIDIA détecté sur l’hôte.
