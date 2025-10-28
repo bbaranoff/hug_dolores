@@ -79,12 +79,6 @@ if [[ -z "$RAW_MEM" || ! "$RAW_MEM" =~ ^[0-9]+$ ]]; then
   GPU_MEM_GB=2
 else
   GPU_MEM_GB=$((RAW_MEM / 1024))
-  # headroom minimal de 1 Go si possible pour éviter OOM lors du chargement
-  if [ "$GPU_MEM_GB" -gt 1 ]; then
-    GPU_MEM_GB=$((GPU_MEM_GB - 1))
-  fi
-  if [ "$GPU_MEM_GB" -lt 1 ]; then GPU_MEM_GB=1; fi
-  log "VRAM détectée : ${RAW_MEM} MiB → OLLAMA_MAX_VRAM_GB=${GPU_MEM_GB}"
 fi
 
 # === Étape 5 : Gestion du TTY ===
@@ -102,7 +96,7 @@ $SUDO docker run $TTY_FLAGS --rm \
   -p "$PORT:$PORT" \
   -v "$VOL":/root/.ollama \
   -e OLLAMA_HOST="0.0.0.0:$PORT" \
-  -e OLLAMA_MAX_VRAM_GB= \
+  -e OLLAMA_MAX_VRAM_GB="$GPU_MEM_GB" \
   "$IMAGE" bash -c "ollama serve >/dev/null 2>&1 & sleep 3; exec OLLAMA_MAX_VRAM_GB="$GPU_MEM_GB" ollama run $MODEL" || \
   log "⚠️  Le conteneur n’a pas pu démarrer. Vérifie 'sudo docker ps -a'."
 
