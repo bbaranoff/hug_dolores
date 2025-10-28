@@ -3,7 +3,7 @@ set -Eeo pipefail
 
 # === Réglages rapides (surchageables via env) ===
 IMAGE="${IMAGE:-bastienbaranoff/dolores_v5}"   # image Docker
-MODEL="${MODEL:-dolores}"                      # modèle unique (non modifié)
+MODEL="dolores"                      # modèle unique (non modifié)
 PORT="${PORT:-11434}"                          # port d'écoute
 VOLUME="${VOLUME:-ollama}"                     # volume persistant
 SUDO="${SUDO:-sudo}"                           # préfixe sudo (vide si root)
@@ -65,11 +65,6 @@ if nvidia-smi >/dev/null 2>&1; then
   fi
   [[ "$AUTO_GPU_LIMIT" =~ ^[0-9]+$ ]] || AUTO_GPU_LIMIT=70
   LIMIT_POWER=$((MAX_POWER * AUTO_GPU_LIMIT / 100))
-  log "Mode GPU actif (limite symbolique ${LIMIT_POWER} W)."
-
-  GPU_FLAGS+=(--gpus all)
-else
-  error "❌ Échec de la communication avec le GPU. Vérifiez vos pilotes NVIDIA."
 fi
 
 # === Étape 4 : Détection VRAM → OLLAMA_MAX_VRAM_GB ===
@@ -97,7 +92,5 @@ $SUDO docker run $TTY_FLAGS --rm \
   -v "$VOL":/root/.ollama \
   -e OLLAMA_HOST="0.0.0.0:$PORT" \
   -e OLLAMA_MAX_VRAM_GB="$GPU_MEM_GB" \
-  "$IMAGE" bash -c "ollama serve >/dev/null 2>&1 & sleep 3; exec ollama run $MODEL" || \
-  log "⚠️  Le conteneur n’a pas pu démarrer. Vérifie 'sudo docker ps -a'."
-
-log "✅ Dolores est opérationnelle sur le port $PORT."
+  -e MODEL="$MODEL" \
+  "$IMAGE" bash -c 'ollama serve >/dev/null 2>&1 & sleep 3; ollama run "$MODEL"'
