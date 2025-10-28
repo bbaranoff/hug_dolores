@@ -43,7 +43,9 @@ if ! command -v docker >/dev/null 2>&1; then
   $SUDO apt-get install -y --no-install-recommends \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
-$SUDO systemctl restart docker || true
+$SUDO service docker stop || true
+sleep 2
+$SUDO service docker start || true
 
 # === Étape 3 : Vérification GPU + limites indicatives ===
 if ! command -v nvidia-smi >/dev/null 2>&1; then
