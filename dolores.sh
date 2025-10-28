@@ -46,7 +46,7 @@ fi
 $SUDO service docker stop || true
 sleep 2
 $SUDO service docker start || true
-
+sleep 2
 # === Étape 3 : Vérification GPU + limites indicatives ===
 if ! command -v nvidia-smi >/dev/null 2>&1; then
   error "Aucun pilote NVIDIA détecté sur l’hôte.
