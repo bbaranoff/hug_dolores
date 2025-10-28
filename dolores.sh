@@ -104,7 +104,7 @@ $SUDO docker pull "$IMAGE" >/dev/null 2>&1 || log "Image locale utilisée."
 log "Démarrage du modèle $MODEL sur le port $PORT..."
 echo "[+] Lancement $IMAGE (modèle=$MODEL, port=$PORT)…"
 
-exec $SUDO docker run $TTY_FLAGS --rm ti \
+exec $SUDO docker run $TTY_FLAGS --rm \
   "${GPU_FLAGS[@]}" \
   -p "$PORT:$PORT" \
   -v "$VOL":/root/.ollama \
