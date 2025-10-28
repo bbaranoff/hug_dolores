@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-set -Eeo pipefail
-
+set -Eefo pipefail
 IMAGE="${IMAGE:-bastienbaranoff/dolores_v5}"
 MODEL="${MODEL:-dolores}"
 PORT="${PORT:-11434}"
