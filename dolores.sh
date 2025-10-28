@@ -102,8 +102,8 @@ $SUDO docker run $TTY_FLAGS --rm \
   -p "$PORT:$PORT" \
   -v "$VOL":/root/.ollama \
   -e OLLAMA_HOST="0.0.0.0:$PORT" \
-  -e OLLAMA_MAX_VRAM_GB="$GPU_MEM_GB" \
-  "$IMAGE" bash -c "ollama serve >/dev/null 2>&1 & sleep 3; exec ollama run $MODEL" || \
+  -e OLLAMA_MAX_VRAM_GB= \
+  "$IMAGE" bash -c "ollama serve >/dev/null 2>&1 & sleep 3; exec OLLAMA_MAX_VRAM_GB="$GPU_MEM_GB" ollama run $MODEL" || \
   log "⚠️  Le conteneur n’a pas pu démarrer. Vérifie 'sudo docker ps -a'."
 
 log "✅ Dolores est opérationnelle sur le port $PORT."
