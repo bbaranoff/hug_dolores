@@ -54,14 +54,6 @@ curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dear
     sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
     $SUDO tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
 $SUDO apt update
-$SUDO  apt-get install -y nvidia-container-toolkit
-$SUDO nvidia-ctk runtime configure --runtime=docker
-$SUDO systemctl restart docker
-# === Étape 2 : Détection GPU NVIDIA (optionnelle, avec limite adaptative) ===
-GPU_FLAGS=()
-if command -v nvidia-smi >/dev/null 2>&1; then
-  log "GPU NVIDIA détecté → activation du support CUDA."
-  
   # Installer toolkit si absent
   if ! dpkg -s nvidia-container-toolkit >/dev/null 2>&1; then
     log "Installation du toolkit NVIDIA pour Docker..."
@@ -92,5 +84,24 @@ else
   log "Aucun GPU NVIDIA détecté (exécution CPU uniquement)."
 fi
 
+
+# === Étape 3 : Gestion du TTY (curl|bash compatible) ===
+TTY_FLAGS="-t"
+if [ -t 0 ] && [ -t 1 ]; then
+  TTY_FLAGS="-it"
+fi
+
+# === Étape 4 : Téléchargement de l’image si absente ===
+log "Préparation du conteneur $IMAGE..."
+$SUDO docker pull "$IMAGE" || log "Image locale utilisée."
+
+# === Étape 5 : Lancement silencieux du serveur et entrée directe au prompt ===
+log "Démarrage du modèle $MODEL sur le port $PORT..."
+# Serve silencieux + prompt
+echo "[+] Lancement $IMAGE (modèle=$MODEL, port=$PORT)…"
+exec sudo docker run -it --rm \
+  --gpus all \
+  -p "$PORT:$PORT" \
+  -v "$VOL":/root/.ollama \
   -e OLLAMA_HOST="0.0.0.0:$PORT" \
   "$IMAGE" bash -c "ollama serve >/dev/null 2>&1 & sleep 2; exec ollama run $MODEL"
