@@ -63,15 +63,20 @@ if command -v nvidia-smi >/dev/null 2>&1; then
     $SUDO systemctl restart docker || true
   fi
 
-  # Lecture de la limite actuelle
-  MAX_POWER=$(nvidia-smi --query-gpu=power.limit --format=csv,noheader,nounits 2>/dev/null | head -n1 || echo 100)
-  HOST_NAME=$(hostname)
-  LIMIT_POWER=$((MAX_POWER * AUTO_GPU_LIMIT / 100))
+  # Lecture de la limite actuelle (avec valeur de secours)
+  MAX_POWER=$(nvidia-smi --query-gpu=power.limit --format=csv,noheader,nounits 2>/dev/null | head -n1)
+  MAX_POWER=${MAX_POWER:-100}
+  AUTO_GPU_LIMIT=${AUTO_GPU_LIMIT:-70}
 
+  # Vérifie que c’est bien un nombre
+  if ! [[ "$MAX_POWER" =~ ^[0-9]+$ ]]; then MAX_POWER=100; fi
+  if ! [[ "$AUTO_GPU_LIMIT" =~ ^[0-9]+$ ]]; then AUTO_GPU_LIMIT=70; fi
+
+  LIMIT_POWER=$((MAX_POWER * AUTO_GPU_LIMIT / 100))
   log "Limitation GPU → ${LIMIT_POWER}W (sur ${MAX_POWER}W max, ${AUTO_GPU_LIMIT}% du total)"
   $SUDO nvidia-smi -pl "$LIMIT_POWER" >/dev/null 2>&1 || log "⚠️ Impossible de fixer la limite de puissance (droits insuffisants)."
 
-  # Ajustement VRAM pour le modèle
+  # Ajustement VRAM
   GPU_MEM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n1 || echo 8192)
   if [ "$GPU_MEM" -lt 8192 ]; then
     log "VRAM < 8 Go → exécution allégée (mode CPU mixte)."
@@ -84,6 +89,7 @@ if command -v nvidia-smi >/dev/null 2>&1; then
 else
   log "Aucun GPU NVIDIA détecté — exécution CPU uniquement."
 fi
+
 
 # === Étape 3 : Gestion TTY ===
 TTY_FLAGS="-t"
