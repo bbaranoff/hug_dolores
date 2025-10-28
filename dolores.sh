@@ -101,7 +101,7 @@ $SUDO docker pull "$IMAGE" >/dev/null 2>&1 || log "Image locale utilisée."
 # === Étape 5 : Lancement Dolores ===
 log "Lancement du modèle $MODEL sur le port $PORT..."
 $SUDO docker run $TTY_FLAGS --rm \
-  "${GPU_FLAGS[@]}" \
+  --gpus all \
   -p "$PORT:$PORT" \
   -v "$VOL":/root/.ollama \
   -e OLLAMA_HOST="0.0.0.0:$PORT" \
