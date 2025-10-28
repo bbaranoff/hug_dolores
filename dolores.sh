@@ -51,28 +51,30 @@ Référence : https://developer.nvidia.com/cuda-downloads"
 fi
 
 # --- GPU : limitation adaptative sécurisée ---
+# --- GPU : détection et compatibilité mobile ---
 GPU_FLAGS=()
 if nvidia-smi >/dev/null 2>&1; then
   log "GPU NVIDIA détecté — utilisation directe."
 
   RAW_POWER=$(nvidia-smi --query-gpu=power.limit --format=csv,noheader,nounits 2>/dev/null | head -n1)
-  # Validation numérique
-  if [[ "$RAW_POWER" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-    MAX_POWER=${RAW_POWER%.*}
-  else
-    log "⚠️  Valeur de puissance non numérique (${RAW_POWER}), utilisation par défaut 100W."
+
+  if [[ -z "$RAW_POWER" || "$RAW_POWER" == *"N/A"* ]]; then
+    log "⚠️  Puissance non lisible sur GPU mobile (${RAW_POWER:-vide}) — valeur par défaut 100 W."
     MAX_POWER=100
+  else
+    MAX_POWER=${RAW_POWER%.*}
   fi
 
-  # Ratio de limitation configurable
+  # On ne tente pas de changer la limite : c’est verrouillé sur GPU laptop.
+  AUTO_GPU_LIMIT=${AUTO_GPU_LIMIT:-70}
   if ! [[ "$AUTO_GPU_LIMIT" =~ ^[0-9]+$ ]]; then AUTO_GPU_LIMIT=70; fi
   LIMIT_POWER=$((MAX_POWER * AUTO_GPU_LIMIT / 100))
-  log "Limitation logicielle estimée : ${LIMIT_POWER}W (sur ${MAX_POWER}W max, ${AUTO_GPU_LIMIT}% du total)"
 
+  log "Mode GPU actif (limite symbolique ${LIMIT_POWER} W, carte mobile détectée)."
   GPU_FLAGS+=(--gpus all)
 else
-  error "❌ Échec de la communication avec le GPU.
-Vérifiez vos pilotes NVIDIA et relancez."
+  error "❌ Aucun GPU NVIDIA détecté ou communication impossible.
+Vérifiez vos pilotes NVIDIA avant de relancer."
 fi
 
 # --- TTY ---
