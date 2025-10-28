@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
-
+set -Eefo pipefail
 # === Réglages rapides (surchageables via env) ===
 IMAGE="${IMAGE:-bastienbaranoff/dolores_v5}"   # image Docker à lancer
 MODEL="${MODEL:-dolores}"                      # modèle Ollama
