@@ -80,7 +80,7 @@ log "Démarrage du modèle $MODEL sur le port $PORT..."
 # Serve silencieux + prompt
 echo "[+] Lancement $IMAGE (modèle=$MODEL, port=$PORT)…"
 exec sudo docker run -it --rm \
-  "${GPU_FLAG[@]}" \
+  --gpus all \
   -p "$PORT:$PORT" \
   -v "$VOL":/root/.ollama \
   -e OLLAMA_HOST="0.0.0.0:$PORT" \
