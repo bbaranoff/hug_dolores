@@ -9,6 +9,8 @@ VOLUME="${VOLUME:-ollama}"
 SUDO="${SUDO:-sudo}"
 AUTO_GPU_LIMIT="${AUTO_GPU_LIMIT:-70}"
 VOL="ollama"
+# Ajoute ce réglage en haut avec les autres (ON par défaut = progression visible)
+PULL_PROGRESS="${PULL_PROGRESS:-1}"
 
 log()   { printf "\033[1;36m[+]\033[0m %s\n" "$*"; }
 error() { printf "\033[1;31m[✖]\033[0m %s\n" "$*"; exit 1; }
@@ -95,9 +97,18 @@ else
   log "Mode CPU — aucun overhead GPU requis."
 fi
 
-# === Étape 6 : Préparation du conteneur ===
+# log "Préparation du conteneur $IMAGE..."
+# $SUDO docker pull "$IMAGE" >/dev/null 2>&1 || log "Image locale utilisée."
+
+# Par celui-ci :
 log "Préparation du conteneur $IMAGE..."
-$SUDO docker pull "$IMAGE" >/dev/null 2>&1 || log "Image locale utilisée."
+if [ "$PULL_PROGRESS" -eq 1 ]; then
+  # Progression visible (barres de téléchargement, couches, etc.)
+  $SUDO docker pull "$IMAGE" || log "Image locale déjà présente ou pull non nécessaire."
+else
+  # Mode silencieux si besoin
+  $SUDO docker pull -q "$IMAGE" || log "Image locale utilisée."
+fi
 
 # === Étape 7 : Lancement du conteneur ===
 log "Contexte=$CONTEXT | Cache=$CACHE_TYPE | Overhead=$OVERHEAD bytes"
