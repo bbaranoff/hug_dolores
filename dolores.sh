@@ -414,7 +414,13 @@ REQ
 pip install --no-cache-dir -r /tmp/requirements.txt > /dev/null
 echo "🚀 Démarrage du bridge Flask (port 8080)..."
 python /tmp/server.py > /dev/null >/dev/null 2>&1 &
-echo "Vous pour ouvrir votre navigateur sur le http://127.0.0.1:8080"
+
+  sleep 2
+  echo ""
+  echo "🌐 Vous pouvez maintenant ouvrir votre navigateur et accéder à l’interface :"
+  echo "   👉 http://127.0.0.1:8080 😊"
+  echo ""
+  
 # === Étape 7 : Lancement du conteneur ===
 log "Contexte=$CONTEXT | Cache=$CACHE_TYPE | Overhead=$OVERHEAD bytes"
 log "Démarrage du conteneur $IMAGE sur le port $PORT..."
