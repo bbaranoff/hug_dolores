@@ -146,13 +146,7 @@ REQ
 
   export OLLAMA_HOST="http://127.0.0.1:$PORT"
   echo "⏳ Attente du démarrage d’Ollama sur $PORT…"
-  for i in {1..30}; do
-    if nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
-      echo "✅ Ollama est prêt."
-      break
-    fi
-    sleep 1
-  done
+  if nc -z 127.0.0.1 "$PORT" 2>/dev/null; then echo "✅ Ollama est prêt." break
 
   echo "🚀 Démarrage du bridge Flask (port 8080)…"
 
