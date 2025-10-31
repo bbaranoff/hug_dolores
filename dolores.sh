@@ -111,7 +111,7 @@ else
 fi
 
 # === Étape 6.5 : Préparation du bridge Flask ===
-log "Téléchargement du bridge Flask (server.py)..."
+log "INstallation du bridge Flask (server.py)..."
 cat > /tmp/server.py <<'PYCODE'
 #!/usr/bin/env python3
 import os, json, requests, openai
@@ -185,6 +185,7 @@ PYCODE
 
 # Créer un venv dans $HOME
 python3 -m venv "/tmp/.env_dolores"
+source /tmp/.env_dolores/bin/activate
 
 # Activer + installer
 "/tmp/.env_dolores/bin/pip" install --no-cache-dir \
