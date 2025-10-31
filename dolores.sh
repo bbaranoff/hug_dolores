@@ -125,6 +125,23 @@ OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 openai.api_key = os.getenv("OPENAI_API_KEY", "sk-...")
+if [ "$ENABLE_BRIDGE_API" -eq 1 ]; then
+  export OLLAMA_HOST="http://127.0.0.1:$PORT"
+
+  echo "⏳ Attente du démarrage d’Ollama sur $PORT…"
+  for i in {1..30}; do
+    if nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
+      echo "✅ Ollama est prêt."
+      break
+    fi
+    sleep 1
+  done
+
+  echo "🚀 Démarrage du bridge Flask (port 8080)…"
+  nohup /tmp/.env_dolores/bin/python /tmp/server.py >/tmp/bridge.log 2>&1 &
+else
+  log "⏭️  Bridge Flask non activé — le modèle tournera en local uniquement."
+fi
 
 app = Flask(__name__)
 
