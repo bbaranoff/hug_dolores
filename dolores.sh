@@ -6,16 +6,19 @@ import json
 import requests
 from flask import Flask, request, Response, render_template_string
 
-# === Réglages rapides ===
-IMAGE="${IMAGE:-bastienbaranoff/dolores_v5}"
-MODEL="${MODEL:-dolores}"
-PORT="${PORT:-11434}"
-VOLUME="${VOLUME:-ollama}"
-SUDO="${SUDO:-sudo}"
-AUTO_GPU_LIMIT="${AUTO_GPU_LIMIT:-70}"
-VOL="ollama"
-# Ajoute ce réglage en haut avec les autres (ON par défaut = progression visible)
-PULL_PROGRESS="${PULL_PROGRESS:-1}"
+# === CONFIGURATION ===
+OLLAMA_HOST  = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+# ✅ NE PAS METTRE LA CLÉ ICI EN DUR
+# Lis-la depuis l’environnement (exportée par ton script Bash)
+openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
+    raise RuntimeError("OPENAI_API_KEY non défini : exécute ton script avec le jeton exporté")
+
+app = Flask(__name__)
+
 
 log()   { printf "\033[1;36m[+]\033[0m %s\n" "$*"; }
 error() { printf "\033[1;31m[✖]\033[0m %s\n" "$*"; exit 1; }
