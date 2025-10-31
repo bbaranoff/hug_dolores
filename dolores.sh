@@ -202,7 +202,7 @@ else
 fi
 
 app = Flask(__name__)
-
+HAS_OPENAI = bool(os.getenv("OPENAI_API_KEY"))
 # === STREAMING ===
 def stream_ollama(prompt):
     url = f"{OLLAMA_HOST}/api/generate"
@@ -232,6 +232,12 @@ def stream_openai(prompt):
             yield delta.content
 
 # === ROUTES ===
+
+@app.route("/api/openai", methods=["POST"])
+def api_openai():
+    if not HAS_OPENAI:
+        return Response("OpenAI API non configurée (OPENAI_API_KEY manquant).", status=503)
+        
 @app.route("/")
 def index():
     return render_template_string(INDEX_HTML)
