@@ -155,16 +155,7 @@ REQ
   done
 
   echo "🚀 Démarrage du bridge Flask (port 8080)…"
-  nohup /tmp/.env_dolores/bin/python /tmp/server.py >/tmp/bridge.log 2>&1 &
 
-  sleep 2
-  echo ""
-  echo "🌐 Vous pouvez maintenant ouvrir votre navigateur et accéder à l’interface :"
-  echo "   👉 http://127.0.0.1:8080 😊"
-  echo ""
-else
-  log "Bridge Flask désactivé par l’utilisateur."
-  export ENABLE_FLASK_BRIDGE=0
 fi
 
 
