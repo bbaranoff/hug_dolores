@@ -373,8 +373,7 @@ if __name__ == "__main__":
 
 PYCODE
 
-# Vérifier où pointe HOME
-
+echo "📦 Installation de Python3 /tmp/.env_dolores"
 # Créer un venv dans $HOME
 python3 -m venv "/tmp/.env_dolores"
 source /tmp/.env_dolores/bin/activate
@@ -385,12 +384,12 @@ requests>=2.31.0
 openai>=1.0.0
 REQ
 pip install --no-cache-dir -r /tmp/requirements.txt > /dev/null
-
+echo "🚀 Démarrage du bridge Flask (port 8080)..."
+python /tmp/server.py > /dev/null >/dev/null 2>&1 &
 
 # === Étape 7 : Lancement du conteneur ===
 log "Contexte=$CONTEXT | Cache=$CACHE_TYPE | Overhead=$OVERHEAD bytes"
 log "Démarrage du conteneur $IMAGE sur le port $PORT..."
-python /tmp/server.py > /dev/null
 $SUDO docker run -it "${GPU_FLAG[@]}" \
   -p "$PORT:$PORT" \
   -v "$VOLUME":/root/.ollama \
