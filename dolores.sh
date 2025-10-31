@@ -233,10 +233,6 @@ def stream_openai(prompt):
 
 # === ROUTES ===
 
-@app.route("/api/openai", methods=["POST"])
-def api_openai():
-    if not HAS_OPENAI:
-        return Response("OpenAI API non configurée (OPENAI_API_KEY manquant).", status=503)
         
 @app.route("/")
 def index():
@@ -262,6 +258,11 @@ def api_openai():
         full_instruction += f"\nInstruction supplémentaire : {extra_instruction}\n"
 
     return Response(stream_openai(full_instruction), mimetype="text/plain")
+  
+@app.route("/api/openai", methods=["POST"])
+def api_openai():
+    if not HAS_OPENAI:
+        return Response("OpenAI API non configurée (OPENAI_API_KEY manquant).", status=503)
 
 # === FRONTEND ===
 INDEX_HTML = """
