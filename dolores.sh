@@ -1,9 +1,7 @@
-#!/usr/bin/env bash
-set -Eeo pipefail
-# --- en haut du fichier ---
 import os
 import json
 import requests
+import openai
 from flask import Flask, request, Response, render_template_string
 
 # === CONFIGURATION ===
@@ -18,7 +16,6 @@ if not openai.api_key:
     raise RuntimeError("OPENAI_API_KEY non défini : exécute ton script avec le jeton exporté")
 
 app = Flask(__name__)
-
 
 log()   { printf "\033[1;36m[+]\033[0m %s\n" "$*"; }
 error() { printf "\033[1;31m[✖]\033[0m %s\n" "$*"; exit 1; }
