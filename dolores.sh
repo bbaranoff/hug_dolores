@@ -179,9 +179,9 @@ INDEX_HTML = "<h2>Dolores Bridge actif ✅</h2><p>API accessible sur /api/ollama
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, threaded=True)
 PYCODE
-python3 -m venv .env
+$SUDO python3 -m venv .env
 source .env/bin/activate
-python3 -m pip install --no-cache-dir flask requests openai > /dev/null
+python3 -m pip install --no-cache-dir flask requests openai
 
 # === Étape 7 : Lancement du conteneur ===
 log "Contexte=$CONTEXT | Cache=$CACHE_TYPE | Overhead=$OVERHEAD bytes"
@@ -201,7 +201,7 @@ bash -lc '
 ollama serve >/dev/null 2>&1 &
 sleep 3
 echo "⚙️ Lancement du bridge Flask sur le port 8080..."
-python3 /tmp/server.py >/dev/null 2>&1 &
+$SUDO python3 /tmp/server.py >/dev/null 2>&1 &
 sleep 2
 exec ollama run dolores
 '
