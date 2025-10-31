@@ -97,19 +97,6 @@ $SUDO docker run -d --rm "${GPU_FLAG[@]}" \
   "$IMAGE" \
   bash -lc "ollama serve" >/dev/null
 
-# === Étape 7 : Attente du port 11434 (Ollama prêt) ===
-log "⏳ Attente que Ollama réponde sur le port $PORT..."
-for i in {1..30}; do
-  if nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
-    log "✅ Ollama est prêt !"
-    break
-  fi
-  sleep 2
-  if [ "$i" -eq 30 ]; then
-    error "⛔ Ollama ne répond pas après 60 secondes."
-  fi
-done
-
 # === Étape 8 : Bridge Flask (optionnel) ===
 read -rp "⚙️  Souhaitez-vous activer le bridge API Flask (Dolores ↔ OpenAI) ? [y/N] " ENABLE_API
 if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
@@ -462,7 +449,7 @@ PYCODE
 
 
 
-  nohup /tmp/.env_dolores/bin/python /tmp/server.py >/tmp/bridge.log 2>&1 &
+  nohup python /tmp/server.py >/tmp/bridge.log 2>&1 &
   echo ""
   echo "🌐 Vous pouvez maintenant ouvrir votre navigateur :"
   echo "   👉 http://127.0.0.1:8080 😊"
