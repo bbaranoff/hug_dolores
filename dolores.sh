@@ -178,10 +178,15 @@ INDEX_HTML = "<h2>Dolores Bridge actif ✅</h2><p>API accessible sur /api/ollama
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, threaded=True)
-PYCODE
-$SUDO python3 -m venv .env
-source .env/bin/activate
-python3 -m pip install --no-cache-dir flask requests openai
+
+python3 -m venv .env
+PYCODEcat > /tmp/requirements.txt <<'REQ'
+flask>=2.3.0
+requests>=2.31.0
+openai>=1.0.0
+REQ
+pip install --no-cache-dir -r /tmp/requirements.txt > /dev/null
+
 
 # === Étape 7 : Lancement du conteneur ===
 log "Contexte=$CONTEXT | Cache=$CACHE_TYPE | Overhead=$OVERHEAD bytes"
@@ -191,7 +196,6 @@ $SUDO docker run -it "${GPU_FLAG[@]}" \
   -p "$PORT:$PORT" \
   -v "$VOLUME":/root/.ollama \
   -e OLLAMA_HOST="0.0.0.0:$PORT" \
-  -e OLLAMA_CONTEXT_LENGTH="$CONTEXT" \
   -e OLLAMA_KV_CACHE_TYPE="$CACHE_TYPE" \
   -e OLLAMA_NUM_PARALLEL=1 \
   -e OLLAMA_MAX_LOADED_MODELS=1 \
@@ -206,3 +210,5 @@ sleep 2
 exec ollama run dolores
 '
 
+
+  -e OLLAMA_CONTEXT_LENGTH="$CONTEXT" \
