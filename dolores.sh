@@ -187,12 +187,6 @@ PYCODE
 python3 -m venv "/tmp/.env_dolores"
 source /tmp/.env_dolores/bin/activate
 
-# Activer + installer
-"/tmp/.env_dolores/bin/pip" install --no-cache-dir \
-  flask>=2.3.0 requests>=2.31.0 openai>=1.0.0
-
-# Lancer
-"/tmp/.env_dolores/.env/bin/python" /tmp/server.py
 cat > /tmp/requirements.txt <<'REQ'
 flask>=2.3.0
 requests>=2.31.0
@@ -218,7 +212,7 @@ bash -lc '
 ollama serve >/dev/null 2>&1 &
 sleep 3
 echo "⚙️ Lancement du bridge Flask sur le port 8080..."
-$SUDO python3 /tmp/server.py >/dev/null 2>&1 &
+python3 /tmp/server.py >/dev/null 2>&1 &
 sleep 2
 exec ollama run dolores
 '
