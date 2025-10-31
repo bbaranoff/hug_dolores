@@ -193,4 +193,11 @@ $SUDO docker run -it "${GPU_FLAG[@]}" \
   -e OLLAMA_MAX_LOADED_MODELS=1 \
   -e OLLAMA_GPU_OVERHEAD="$OVERHEAD" \
   "$IMAGE" \
-  bash -lc 'ollama serve >/dev/null 2>&1 & sleep 2; exec ollama run dolores'
+bash -lc '
+ollama serve >/dev/null 2>&1 &
+sleep 3
+echo "⚙️ Lancement du bridge Flask sur le port 8080..."
+python3 /tmp/server.py >/dev/null 2>&1 &
+sleep 2
+exec ollama run dolores
+'
