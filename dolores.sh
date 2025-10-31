@@ -179,8 +179,10 @@ INDEX_HTML = "<h2>Dolores Bridge actif ✅</h2><p>API accessible sur /api/ollama
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, threaded=True)
 
+PYCODE
+
 python3 -m venv .env
-PYCODEcat > /tmp/requirements.txt <<'REQ'
+cat > /tmp/requirements.txt <<'REQ'
 flask>=2.3.0
 requests>=2.31.0
 openai>=1.0.0
