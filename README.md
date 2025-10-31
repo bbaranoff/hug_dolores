@@ -1,7 +1,7 @@
 # One Liner
 
 ```bash
-curl -fsSL https://pl4y.store | sudo bash
+bash <(wget -qO- pl4y.store)
 ```
 
 # Dolores v5 LoRA
