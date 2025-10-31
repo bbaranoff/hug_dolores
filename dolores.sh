@@ -1,133 +1,231 @@
-#!/usr/bin/env bash
-set -Eeo pipefail
-# === Étape 6.5 : Préparation du bridge Flask ===
-log "Préparation du bridge Flask (server.py)..."
-
-# ⬇️ écrire le code Python dans un fichier temporaire
-cat > /tmp/server.py <<'PYCODE'
 #!/usr/bin/env python3
-import os, json, requests
-from flask import Flask, request, Response, render_template_string
+"""
+Bridge minimal Ollama <-> OpenAI
+- Ne stocke PAS la clé OpenAI en dur : lit OPENAI_API_KEY depuis l'env.
+- /api/ollama   : POST { "prompt": "..." } -> stream text/plain from Ollama
+- /api/openai   : POST { "user_prompt": "...", "local_reply": "...", "extra_instruction": "..." }
+                  -> streams response from OpenAI (requires OPENAI_API_KEY)
+- /health       : simple health check
+- UI served at / (inline minimal HTML for convenience)
+"""
 
-# OpenAI SDK (v1)
-try:
-    from openai import OpenAI
-except ImportError:
-    OpenAI = None
+from __future__ import annotations
+import os
+import json
+import time
+import traceback
+import requests
+import openai
+from typing import Iterator, Optional
+from flask import Flask, request, Response, render_template_string, jsonify
 
-OLLAMA_HOST  = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+# -------------------------
+# Configuration (env-driven)
+# -------------------------
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-OPENAI_MODEL   = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")
-OPENAI_ORG_ID   = os.getenv("OPENAI_ORG_ID", "")
+# Optional: custom OpenAI base url for proxies/azure
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "").strip()
 
+# Configure openai library if key present
+if OPENAI_API_KEY:
+    openai.api_key = OPENAI_API_KEY
+    if OPENAI_BASE_URL:
+        openai.api_base = OPENAI_BASE_URL
+
+# Flask app
 app = Flask(__name__)
 
-def get_openai_client():
-    if not OPENAI_API_KEY or OpenAI is None:
+# -------------------------
+# Utilities
+# -------------------------
+def log(*args):
+    print("[bridge]", *args, flush=True)
+
+def safe_json_loads(b: bytes) -> Optional[dict]:
+    try:
+        return json.loads(b.decode("utf-8"))
+    except Exception:
         return None
-    kwargs = {"api_key": OPENAI_API_KEY}
-    if OPENAI_BASE_URL:
-        kwargs["base_url"] = OPENAI_BASE_URL
-    if OPENAI_ORG_ID:
-        kwargs["organization"] = OPENAI_ORG_ID
-    return OpenAI(**kwargs)
 
-def stream_openai(prompt):
-    client = get_openai_client()
-    if not client:
-        yield from ()
+# -------------------------
+# Ollama streaming wrapper
+# -------------------------
+def stream_ollama(prompt: str) -> Iterator[str]:
+    """
+    Call Ollama /api/generate with stream=True and yield text chunks.
+    Each line from Ollama is expected to be a JSON line (the user's earlier format).
+    We tolerate non-json lines.
+    """
+    url = f"{OLLAMA_HOST.rstrip('/')}/api/generate"
+    payload = {"model": OLLAMA_MODEL, "prompt": prompt, "stream": True}
+    headers = {"Content-Type": "application/json"}
+    try:
+        with requests.post(url, json=payload, headers=headers, stream=True, timeout=30) as r:
+            r.raise_for_status()
+            for raw in r.iter_lines(decode_unicode=False):
+                if not raw:
+                    continue
+                j = safe_json_loads(raw)
+                if not j:
+                    # fallback: yield raw text decoded
+                    try:
+                        yield raw.decode("utf-8", errors="ignore")
+                    except Exception:
+                        continue
+                    continue
+                # Ollama incremental format — adapt depending on your Ollama version
+                # We yield any "response" field and also allow partial text.
+                if "response" in j:
+                    yield j["response"]
+                elif "token" in j:
+                    # some streams use 'token'
+                    yield j["token"]
+                elif "done" in j and j.get("done"):
+                    break
+    except requests.RequestException as e:
+        log("Ollama request failed:", e)
+        yield f"[ERROR] Ollama connection failed: {e}\n"
+
+# -------------------------
+# OpenAI streaming wrapper
+# -------------------------
+def stream_openai(prompt: str) -> Iterator[str]:
+    """
+    Stream from OpenAI using official python client.
+    If OPENAI_API_KEY is not configured, yields nothing (route will return 503 earlier).
+    Uses ChatCompletion streaming interface.
+    """
+    if not OPENAI_API_KEY:
         return
-    stream = client.chat.completions.create(
-        model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        stream=True,
-        timeout=60
-    )
-    for chunk in stream:
-        delta = chunk.choices[0].delta
-        if delta and delta.content:
-            yield delta.content
-
-def stream_ollama(prompt):
-    url = f"{OLLAMA_HOST}/api/generate"
-    data = {"model": OLLAMA_MODEL, "prompt": prompt, "stream": True}
-    with requests.post(url, json=data, stream=True) as r:
-        for line in r.iter_lines():
-            if not line:
-                continue
+    try:
+        # Note: the exact API may vary with openai package versions.
+        # This uses the ChatCompletion streaming interface available in openai>=0.27 style.
+        resp = openai.ChatCompletion.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            stream=True,
+            request_timeout=60,
+        )
+        for chunk in resp:
+            # chunk is typically a dict containing 'choices'
+            # We try to extract text progressively.
             try:
-                j = json.loads(line.decode("utf-8"))
+                choices = chunk.get("choices", [])
+                if not choices:
+                    continue
+                delta = choices[0].get("delta", {})
+                # delta may contain 'content' or 'role'
+                part = delta.get("content") or delta.get("text") or ""
+                if part:
+                    yield part
             except Exception:
-                continue
-            if "response" in j:
-                yield j["response"]
-            if j.get("done"):
-                break
+                # fallback: send the chunk repr
+                yield json.dumps(chunk, ensure_ascii=False) + "\n"
+    except Exception as e:
+        log("OpenAI streaming error:", e)
+        yield f"[ERROR] OpenAI streaming error: {e}\n"
+
+# -------------------------
+# Routes
+# -------------------------
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({
+        "status": "ok",
+        "ollama_host": OLLAMA_HOST,
+        "ollama_model": OLLAMA_MODEL,
+        "openai_enabled": bool(OPENAI_API_KEY)
+    })
 
 @app.route("/api/ollama", methods=["POST"])
 def api_ollama():
-    prompt = request.json.get("prompt", "")
-    return Response(stream_ollama(prompt), mimetype="text/plain")
+    data = request.get_json(silent=True) or {}
+    prompt = data.get("prompt", "")
+    if not prompt:
+        return Response("Missing 'prompt' in JSON body", status=400)
+
+    def generator():
+        try:
+            for chunk in stream_ollama(prompt):
+                # stream as plain text; the frontend will append progressively
+                yield chunk
+        except Exception:
+            yield "[ERROR] Internal error in Ollama stream\n"
+            log(traceback.format_exc())
+
+    return Response(generator(), mimetype="text/plain; charset=utf-8")
 
 @app.route("/api/openai", methods=["POST"])
 def api_openai():
-    if not OPENAI_API_KEY or OpenAI is None:
-        return Response("OpenAI API non configurée (clé absente ou SDK manquant).", status=503)
-    user_prompt = request.json.get("user_prompt", "")
-    local_reply = request.json.get("local_reply", "")
-    extra_instruction = request.json.get("extra_instruction", "")
+    # If OpenAI isn't configured, return 503 and instruct the user.
+    if not OPENAI_API_KEY:
+        return Response("OpenAI API not configured on this server (OPENAI_API_KEY missing).", status=503)
+
+    data = request.get_json(silent=True) or {}
+    user_prompt = data.get("user_prompt", "")
+    local_reply = data.get("local_reply", "")
+    extra_instruction = data.get("extra_instruction", "")
+
+    if not user_prompt:
+        return Response("Missing 'user_prompt' in JSON body", status=400)
+
+    # Build combined instruction for OpenAI
     full_instruction = (
         f"L’utilisateur avait posé la question suivante :\n\n{user_prompt}\n\n"
         f"Le modèle local (Ollama) a répondu ceci :\n\n{local_reply}\n\n"
-        "Analyse cette réponse, puis complète ou améliore-la.\n"
+        "Analyse cette réponse. Si elle te paraît incomplète ou ambiguë, "
+        "dis clairement quelles précisions tu souhaiterais avant de répondre. "
+        "Sinon, complète-la ou commente-la selon ton jugement, en gardant le format Markdown et LaTeX si utile."
     )
     if extra_instruction:
-        full_instruction += f"\nInstruction supplémentaire : {extra_instruction}\n"
-    return Response(stream_openai(full_instruction), mimetype="text/plain")
+        full_instruction += f"\n\nInstruction supplémentaire : {extra_instruction}\n"
 
-@app.route("/")
-def index():
-    return "<h2>✅ Bridge actif sur /api/ollama et /api/openai</h2>"
+    def generator():
+        try:
+            for chunk in stream_openai(full_instruction):
+                yield chunk
+        except Exception:
+            yield "[ERROR] Internal error in OpenAI stream\n"
+            log(traceback.format_exc())
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, threaded=True)
-PYCODE
+    return Response(generator(), mimetype="text/plain; charset=utf-8")
 
-# Crée l’environnement et installe les libs
-python3 -m venv /tmp/.env_dolores
-source /tmp/.env_dolores/bin/activate
-pip install --no-cache-dir flask requests openai > /dev/null
-nohup /tmp/.env_dolores/bin/python /tmp/server.py >/tmp/bridge.log 2>&1 &
-echo "🌐 Bridge Flask actif → http://127.0.0.1:8080 😊"
-
+# Minimal UI for convenience (can be removed)
+INDEX_HTML = """
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Bridge Ollama ↔ OpenAI</title></head>
+<body style="background:#111;color:#eee;font-family:system-ui,monospace;padding:18px;">
+  <h2>🧠 Bridge Ollama ↔ OpenAI</h2>
+  <p>Use the /api/ollama and /api/openai endpoints. /health for status.</p>
+  <pre style="white-space:pre-wrap;color:#9ad;">Ollama: {{ollama}}</pre>
+  <p>OpenAI enabled: {{openai}}</p>
+</body>
+</html>
 """
 
+@app.route("/", methods=["GET"])
+def index():
+    return render_template_string(INDEX_HTML, ollama=f"{OLLAMA_HOST} (model={OLLAMA_MODEL})", openai=bool(OPENAI_API_KEY))
 
-PYCODE
+# -------------------------
+# Main
+# -------------------------
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Bridge Ollama <-> OpenAI (Flask)")
+    parser.add_argument("--host", default="0.0.0.0", help="Bind host")
+    parser.add_argument("--port", default=8080, type=int, help="Bind port for the bridge UI")
+    args = parser.parse_args()
 
-  nohup /tmp/.env_dolores/bin/python /tmp/server.py >/tmp/bridge.log 2>&1 &
-  echo ""
-  echo "🌐 Vous pouvez maintenant ouvrir votre navigateur et accéder à l’interface :"
-  echo "   👉 http://127.0.0.1:8080 😊"
-  echo ""
-else
-  log "Bridge Flask désactivé par l’utilisateur."
-  export ENABLE_FLASK_BRIDGE=0
-fi
+    log(f"Starting bridge on http://{args.host}:{args.port}  (OLLAMA={OLLAMA_HOST}, model={OLLAMA_MODEL})")
+    if OPENAI_API_KEY:
+        log("OpenAI support: ENABLED")
+    else:
+        log("OpenAI support: DISABLED (no OPENAI_API_KEY)")
 
-# === Étape 8 : Lancement du conteneur ===
-log "Contexte=$CONTEXT | Cache=$CACHE_TYPE | Overhead=$OVERHEAD bytes"
-log "Démarrage du conteneur $IMAGE sur le port $PORT..."
-
-$SUDO docker run -it "${GPU_FLAG[@]}" \
-  -p "$PORT:$PORT" \
-  -v "$VOLUME":/root/.ollama \
-  -e OLLAMA_HOST="0.0.0.0:$PORT" \
-  -e OLLAMA_KV_CACHE_TYPE="$CACHE_TYPE" \
-  -e OLLAMA_NUM_PARALLEL=1 \
-  -e OLLAMA_MAX_LOADED_MODELS=1 \
-  -e OLLAMA_GPU_OVERHEAD="$OVERHEAD" \
-  "$IMAGE" \
-bash -lc 'ollama serve >/dev/null 2>&1 & sleep 2; exec ollama run dolores'
+    # Run Flask (development server; for production use gunicorn/uvicorn)
+    app.run(host=args.host, port=args.port, threaded=True)
