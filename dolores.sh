@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 set -Eeo pipefail
+# --- en haut du fichier ---
+import os
+import json
+import requests
+from flask import Flask, request, Response, render_template_string
 
 # === Réglages rapides ===
 IMAGE="${IMAGE:-bastienbaranoff/dolores_v5}"
@@ -150,40 +155,79 @@ REQ
   echo "🚀 Démarrage du bridge Flask (port 8080)…"
 
 # === Étape 6.5 : Préparation du bridge Flask ===
-log "INstallation du bridge Flask (server.py)..."
-cat > /tmp/server.py <<'PYCODE'
-#!/usr/bin/env python3
-import os
-import json
-import requests
-import openai
-from flask import Flask, request, Response, render_template_string
 
-# === CONFIGURATION ===
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+# ⬇️ OpenAI (SDK v1+)
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None  # le SDK n'est pas installé, on gère proprement plus bas
+
+# === CONFIG ===
+OLLAMA_HOST  = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-openai.api_key = os.getenv("OPENAI_API_KEY", "sk-...")
-if [ "$ENABLE_BRIDGE_API" -eq 1 ]; then
-  export OLLAMA_HOST="http://127.0.0.1:$PORT"
 
-  echo "⏳ Attente du démarrage d’Ollama sur $PORT…"
-  for i in {1..30}; do
-    if nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
-      echo "✅ Ollama est prêt."
-      break
-    fi
-    sleep 1
-  done
+# Clé OpenAI (facultative). Si absente → /api/openai renverra 503.
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_MODEL   = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-  echo "🚀 Démarrage du bridge Flask (port 8080)…"
-  nohup /tmp/.env_dolores/bin/python /tmp/server.py >/tmp/bridge.log 2>&1 &
-else
-  log "⏭️  Bridge Flask non activé — le modèle tournera en local uniquement."
-fi
+# Support optionnel d’un endpoint custom (Azure/OpenAI-proxy)
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "").strip()  # ex. "https://your-endpoint.openai.azure.com/openai/v1"
+OPENAI_ORG_ID   = os.getenv("OPENAI_ORG_ID", "").strip()    # si tu utilises des orgs OpenAI
 
 app = Flask(__name__)
-HAS_OPENAI = bool(os.getenv("OPENAI_API_KEY"))
+
+# === Fabrique de client OpenAI (paresseuse) ===
+def get_openai_client():
+    if not OPENAI_API_KEY:
+        return None  # pas de clé → pas d’API
+    if OpenAI is None:
+        return None  # lib non installée
+    kwargs = {"api_key": OPENAI_API_KEY}
+    if OPENAI_BASE_URL:
+        kwargs["base_url"] = OPENAI_BASE_URL
+    if OPENAI_ORG_ID:
+        kwargs["organization"] = OPENAI_ORG_ID
+    return OpenAI(**kwargs)
+
+# === STREAMING OPENAI ===
+def stream_openai(prompt: str):
+    client = get_openai_client()
+    if client is None:
+        # renvoyé proprement par la route
+        yield from ()
+        return
+    stream = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        stream=True,
+        timeout=60,   # optionnel
+    )
+    for chunk in stream:
+        delta = chunk.choices[0].delta
+        if delta and delta.content:
+            yield delta.content
+
+# === ROUTES ===
+@app.route("/api/openai", methods=["POST"])
+def api_openai():
+    # Si pas de clé ou SDK manquant → 503 explicite
+    if not OPENAI_API_KEY or OpenAI is None:
+        return Response("OpenAI API non configurée (clé absente ou SDK non installé).", status=503)
+
+    user_prompt = request.json.get("user_prompt", "")
+    local_reply = request.json.get("local_reply", "")
+    extra_instruction = request.json.get("extra_instruction", "")
+
+    full_instruction = (
+        f"L’utilisateur avait posé la question suivante :\n\n{user_prompt}\n\n"
+        f"Le modèle local (Ollama) a répondu ceci :\n\n{local_reply}\n\n"
+        "Analyse cette réponse, puis complète ou améliore-la.\n"
+    )
+    if extra_instruction:
+        full_instruction += f"\nInstruction supplémentaire : {extra_instruction}\n"
+
+    return Response(stream_openai(full_instruction), mimetype="text/plain")
+
 # === STREAMING ===
 def stream_ollama(prompt):
     url = f"{OLLAMA_HOST}/api/generate"
@@ -201,20 +245,7 @@ def stream_ollama(prompt):
             if j.get("done"):
                 break
 
-def stream_openai(prompt):
-    stream = openai.chat.completions.create(
-        model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        stream=True
-    )
-    for chunk in stream:
-        delta = chunk.choices[0].delta
-        if delta and delta.content:
-            yield delta.content
-
 # === ROUTES ===
-
-        
 @app.route("/")
 def index():
     return render_template_string(INDEX_HTML)
@@ -239,11 +270,6 @@ def api_openai():
         full_instruction += f"\nInstruction supplémentaire : {extra_instruction}\n"
 
     return Response(stream_openai(full_instruction), mimetype="text/plain")
-  
-@app.route("/api/openai", methods=["POST"])
-def api_openai():
-    if not HAS_OPENAI:
-        return Response("OpenAI API non configurée (OPENAI_API_KEY manquant).", status=503)
 
 # === FRONTEND ===
 INDEX_HTML = """
