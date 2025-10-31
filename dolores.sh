@@ -109,12 +109,81 @@ else
   # Mode silencieux si besoin
   $SUDO docker pull -q "$IMAGE" || log "Image locale utilisée."
 fi
+# === Étape 6.5 : Préparation du bridge Flask ===
+log "Téléchargement du bridge Flask (server.py)..."
+cat > /tmp/server.py <<'PYCODE'
+#!/usr/bin/env python3
+import os, json, requests, openai
+from flask import Flask, request, Response, render_template_string
+
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+openai.api_key = os.getenv("OPENAI_API_KEY", "sk-....")
+
+app = Flask(__name__)
+
+def stream_ollama(prompt):
+    url = f"{OLLAMA_HOST}/api/generate"
+    data = {"model": OLLAMA_MODEL, "prompt": prompt, "stream": True}
+    with requests.post(url, json=data, stream=True) as r:
+        for line in r.iter_lines():
+            if not line:
+                continue
+            try:
+                j = json.loads(line.decode("utf-8"))
+            except Exception:
+                continue
+            if "response" in j:
+                yield j["response"]
+            if j.get("done"):
+                break
+
+def stream_openai(prompt):
+    stream = openai.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        stream=True
+    )
+    for chunk in stream:
+        delta = chunk.choices[0].delta
+        if delta and delta.content:
+            yield delta.content
+
+@app.route("/")
+def index():
+    return render_template_string(INDEX_HTML)
+
+@app.route("/api/ollama", methods=["POST"])
+def api_ollama():
+    prompt = request.json.get("prompt", "")
+    return Response(stream_ollama(prompt), mimetype="text/plain")
+
+@app.route("/api/openai", methods=["POST"])
+def api_openai():
+    user_prompt = request.json.get("user_prompt", "")
+    local_reply = request.json.get("local_reply", "")
+    extra_instruction = request.json.get("extra_instruction", "")
+    full_instruction = (
+        f"L’utilisateur avait posé la question suivante :\n\n{user_prompt}\n\n"
+        f"Le modèle local (Ollama) a répondu ceci :\n\n{local_reply}\n\n"
+        "Analyse cette réponse, puis complète ou améliore-la.\n"
+    )
+    if extra_instruction:
+        full_instruction += f"\nInstruction supplémentaire : {extra_instruction}\n"
+    return Response(stream_openai(full_instruction), mimetype="text/plain")
+
+INDEX_HTML = "<h2>Dolores Bridge actif ✅</h2><p>API accessible sur /api/ollama et /api/openai</p>"
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080, threaded=True)
+PYCODE
 
 # === Étape 7 : Lancement du conteneur ===
 log "Contexte=$CONTEXT | Cache=$CACHE_TYPE | Overhead=$OVERHEAD bytes"
 log "Démarrage du conteneur $IMAGE sur le port $PORT..."
 
-$SUDO docker run -it --rm "${GPU_FLAG[@]}" \
+$SUDO docker run -it "${GPU_FLAG[@]}" \
   -p "$PORT:$PORT" \
   -v "$VOLUME":/root/.ollama \
   -e OLLAMA_HOST="0.0.0.0:$PORT" \
