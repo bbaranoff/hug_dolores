@@ -145,13 +145,9 @@ REQ
   pip install --no-cache-dir -r /tmp/requirements.txt > /dev/null
 
   export OLLAMA_HOST="http://127.0.0.1:$PORT"
-  echo "⏳ Attente du démarrage d’Ollama sur $PORT…"
-  if nc -z 127.0.0.1 "$PORT" 2>/dev/null; then echo "✅ Ollama est prêt." break
+  echo "⏳ Démarrage d’Ollama sur $PORT…"
 
   echo "🚀 Démarrage du bridge Flask (port 8080)…"
-
-fi
-
 
 # === Étape 6.5 : Préparation du bridge Flask ===
 log "INstallation du bridge Flask (server.py)..."
