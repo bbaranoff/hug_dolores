@@ -109,6 +109,17 @@ else
   # Mode silencieux si besoin
   $SUDO docker pull -q "$IMAGE" || log "Image locale utilisée."
 fi
+# === Étape 6.4 : Choix utilisateur pour activer le bridge API ===
+read -rp "Souhaitez-vous activer l’API Flask (bridge OpenAI ↔ Ollama) ? [o/n] " enable_api
+enable_api=$(echo "$enable_api" | tr '[:upper:]' '[:lower:]')
+
+if [[ "$enable_api" =~ ^(o|oui|y|yes)$ ]]; then
+  export ENABLE_BRIDGE_API=1
+  log "Activation du bridge Flask confirmée."
+else
+  export ENABLE_BRIDGE_API=0
+  log "Bridge Flask désactivé (aucune API exposée)."
+fi
 
 # === Étape 6.5 : Préparation du bridge Flask ===
 log "INstallation du bridge Flask (server.py)..."
