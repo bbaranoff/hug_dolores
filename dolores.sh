@@ -110,6 +110,7 @@ else
   $SUDO docker pull -q "$IMAGE" || log "Image locale utilisée."
 fi
 # === Étape 6.5 : Préparation du bridge Flask ===
+# === Étape 6.5 : Préparation du bridge Flask ===
 log "Téléchargement du bridge Flask (server.py)..."
 cat > /tmp/server.py <<'PYCODE'
 #!/usr/bin/env python3
@@ -179,6 +180,7 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, threaded=True)
 PYCODE
 
+
 # === Étape 7 : Lancement du conteneur ===
 log "Contexte=$CONTEXT | Cache=$CACHE_TYPE | Overhead=$OVERHEAD bytes"
 log "Démarrage du conteneur $IMAGE sur le port $PORT..."
@@ -201,3 +203,4 @@ python3 /tmp/server.py >/dev/null 2>&1 &
 sleep 2
 exec ollama run dolores
 '
+
