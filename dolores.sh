@@ -132,7 +132,7 @@ if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
   else
     echo "ℹ️ Aucun jeton saisi ; si \$OPENAI_API_KEY existe déjà dans l’env, il sera utilisé."
   fi
-
+fi
   echo "📦 Installation de Python3 /tmp/.env_dolores"
   python3 -m venv "/tmp/.env_dolores"
   source /tmp/.env_dolores/bin/activate
