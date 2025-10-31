@@ -110,17 +110,9 @@ $SUDO docker run -d --restart=unless-stopped \
   "$IMAGE" \
   bash -lc "ollama serve --host 0.0.0.0 --port $PORT"
 
-# Attente API Ollama
-log "Attente que l’API Ollama réponde…"
-if ! wait_http "http://127.0.0.1:$PORT/api/tags" 45; then
-  warn "L’API /api/tags ne répond pas encore, nouveau test /api/version…"
-  wait_http "http://127.0.0.1:$PORT/api/version" 15 || error "Ollama ne répond pas. Vérifie les logs: docker logs $CONTAINER_NAME"
-fi
-log "✔️  Ollama API OK."
-
 # Optionnel: s’assurer que le modèle existe (pull)
 log "Vérification/installation du modèle: $MODEL"
-docker exec "$CONTAINER_NAME" bash -lc "ollama pull '$MODEL' || true"
+sudo docker exec "$CONTAINER_NAME" bash -lc "ollama pull '$MODEL' || true"
 
 # =============================
 #  Étape 6 : Bridge Flask (optionnel)
