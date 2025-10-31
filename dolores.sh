@@ -181,7 +181,18 @@ if __name__ == "__main__":
 
 PYCODE
 
-python3 -m venv .env
+# Vérifier où pointe HOME
+echo "$HOME"     # doit renvoyer /root dans le conteneur
+
+# Créer un venv dans $HOME
+python3 -m venv "$HOME/.env"
+
+# Activer + installer
+"$HOME/.env/bin/pip" install --no-cache-dir \
+  flask>=2.3.0 requests>=2.31.0 openai>=1.0.0
+
+# Lancer
+"$HOME/.env/bin/python" /tmp/server.py
 cat > /tmp/requirements.txt <<'REQ'
 flask>=2.3.0
 requests>=2.31.0
