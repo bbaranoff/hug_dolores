@@ -25,7 +25,7 @@ if command -v apt-get >/dev/null 2>&1; then
   $SUDO apt-get update -y
   log "Installation des paquets requis..."
   $SUDO apt-get install -y --no-install-recommends \
-    ca-certificates curl gnupg lsb-release apt-transport-https netcat-openbsd
+    ca-certificates curl gnupg lsb-release apt-transport-https netcat-openbsd python3-venv
 else
   error "apt-get non trouvé — environnement non Debian/Ubuntu."
 fi
@@ -179,7 +179,9 @@ INDEX_HTML = "<h2>Dolores Bridge actif ✅</h2><p>API accessible sur /api/ollama
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, threaded=True)
 PYCODE
-
+python3 -m venv .env
+source .env/bin/activate
+python3 -m pip install --no-cache-dir flask requests openai > /dev/null
 
 # === Étape 7 : Lancement du conteneur ===
 log "Contexte=$CONTEXT | Cache=$CACHE_TYPE | Overhead=$OVERHEAD bytes"
