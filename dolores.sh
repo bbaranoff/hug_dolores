@@ -109,17 +109,64 @@ else
   # Mode silencieux si besoin
   $SUDO docker pull -q "$IMAGE" || log "Image locale utilisée."
 fi
-# === Étape 6.4 : Choix utilisateur pour activer le bridge API ===
-read -rp "Souhaitez-vous activer l’API Flask (bridge OpenAI ↔ Ollama) ? [o/n] " enable_api
-enable_api=$(echo "$enable_api" | tr '[:upper:]' '[:lower:]')
 
-if [[ "$enable_api" =~ ^(o|oui|y|yes)$ ]]; then
-  export ENABLE_BRIDGE_API=1
-  log "Activation du bridge Flask confirmée."
+
+# === Étape 6.4 : Question utilisateur ===
+read -rp "⚙️  Souhaitez-vous activer le bridge API Flask (Dolores ↔ OpenAI) ? [y/N] " ENABLE_API
+if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
+  log "Activation du bridge Flask (API)..."
+  export ENABLE_FLASK_BRIDGE=1
+
+  # 🔐 Demander (optionnel) le jeton OpenAI pour activer /api/openai
+  read -rp "🔐 Fournir un jeton OpenAI (OPENAI_API_KEY) pour /api/openai ? [y/N] " USE_TOKEN
+  if [[ "$USE_TOKEN" =~ ^[YyOo] ]]; then
+    read -rs -p "👉 Entrez votre OPENAI_API_KEY (commence par 'sk-') : " OPENAI_API_KEY_INPUT
+    echo
+    if [[ -n "$OPENAI_API_KEY_INPUT" && "$OPENAI_API_KEY_INPUT" == sk-* ]]; then
+      export OPENAI_API_KEY="$OPENAI_API_KEY_INPUT"
+      echo "🔑 Jeton chargé (…${OPENAI_API_KEY_INPUT: -6})"
+    else
+      echo "⚠️ Jeton vide ou invalide ; /api/openai restera désactivé."
+      unset OPENAI_API_KEY
+    fi
+  else
+    echo "ℹ️ Aucun jeton saisi ; si \$OPENAI_API_KEY existe déjà dans l’env, il sera utilisé."
+  fi
+
+  echo "📦 Installation de Python3 /tmp/.env_dolores"
+  python3 -m venv "/tmp/.env_dolores"
+  source /tmp/.env_dolores/bin/activate
+
+  cat > /tmp/requirements.txt <<'REQ'
+flask>=2.3.0
+requests>=2.31.0
+openai>=1.0.0
+REQ
+  pip install --no-cache-dir -r /tmp/requirements.txt > /dev/null
+
+  export OLLAMA_HOST="http://127.0.0.1:$PORT"
+  echo "⏳ Attente du démarrage d’Ollama sur $PORT…"
+  for i in {1..30}; do
+    if nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
+      echo "✅ Ollama est prêt."
+      break
+    fi
+    sleep 1
+  done
+
+  echo "🚀 Démarrage du bridge Flask (port 8080)…"
+  nohup /tmp/.env_dolores/bin/python /tmp/server.py >/tmp/bridge.log 2>&1 &
+
+  sleep 2
+  echo ""
+  echo "🌐 Vous pouvez maintenant ouvrir votre navigateur et accéder à l’interface :"
+  echo "   👉 http://127.0.0.1:8080 😊"
+  echo ""
 else
-  export ENABLE_BRIDGE_API=0
-  log "Bridge Flask désactivé (aucune API exposée)."
+  log "Bridge Flask désactivé par l’utilisateur."
+  export ENABLE_FLASK_BRIDGE=0
 fi
+
 
 # === Étape 6.5 : Préparation du bridge Flask ===
 log "INstallation du bridge Flask (server.py)..."
