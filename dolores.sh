@@ -82,9 +82,9 @@ fi
 # =============================
 log "Préparation de l'image Docker: $IMAGE"
 if [ "$PULL_PROGRESS" -eq 1 ]; then
-  docker pull "$IMAGE" || log "Image locale déjà présente."
+  $SUDO docker pull "$IMAGE" || log "Image locale déjà présente."
 else
-  docker pull -q "$IMAGE" || log "Image locale utilisée."
+  $SUDO docker pull -q "$IMAGE" || log "Image locale utilisée."
 fi
 
 # =============================
@@ -95,13 +95,13 @@ fi
 CONTAINER_NAME="dolores_ollama"
 
 # Stop/cleanup précédent
-if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
+if $SUDO docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
   log "Arrêt de l'ancien conteneur $CONTAINER_NAME…"
-  docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  $SUDO docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 fi
 
 log "Démarrage d’Ollama ($CONTAINER_NAME) sur le port $PORT…"
-docker run -d --restart=unless-stopped \
+$SUDO docker run -d --restart=unless-stopped \
   "${GPU_FLAG[@]}" \
   --name "$CONTAINER_NAME" \
   -p "$PORT:$PORT" \
