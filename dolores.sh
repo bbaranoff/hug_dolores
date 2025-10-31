@@ -198,7 +198,7 @@ pip install --no-cache-dir -r /tmp/requirements.txt > /dev/null
 # === Étape 7 : Lancement du conteneur ===
 log "Contexte=$CONTEXT | Cache=$CACHE_TYPE | Overhead=$OVERHEAD bytes"
 log "Démarrage du conteneur $IMAGE sur le port $PORT..."
-python" /tmp/server.py 
+python /tmp/server.py 
 $SUDO docker run -it "${GPU_FLAG[@]}" \
   -p "$PORT:$PORT" \
   -v "$VOLUME":/root/.ollama \
