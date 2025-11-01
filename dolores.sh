@@ -375,32 +375,6 @@ async function copyChat() {
 </html>
 """
 
-# === Routes ===
-@app.route("/")
-def index():
-    return render_template_string(INDEX_HTML)
-
-@app.route("/api/ollama", methods=["POST"])
-def api_ollama():
-    prompt = request.json.get("prompt", "")
-    return Response(stream_ollama(prompt), mimetype="text/plain")
-
-@app.route("/api/openai", methods=["POST"])
-def api_openai():
-    if not OPENAI_API_KEY or OpenAI is None:
-        return Response("OpenAI API non configurée.", status=503)
-    user_prompt = request.json.get("user_prompt", "")
-    local_reply = request.json.get("local_reply", "")
-    extra = request.json.get("extra_instruction", "")
-    full = (
-        f"L’utilisateur avait posé :\n\n{user_prompt}\n\n"
-        f"Réponse locale (Ollama) :\n\n{local_reply}\n\n"
-        "Analyse et complète la réponse."
-    )
-    if extra:
-        full += f"\n\nInstruction supplémentaire : {extra}"
-    return Response(stream_openai(full), mimetype="text/plain")
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, threaded=True)
 
