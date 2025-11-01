@@ -389,9 +389,10 @@ $SUDO docker run -d "${GPU_FLAG[@]}" \
   "$IMAGE" \
   bash -lc "ollama serve" >/dev/null
 
-  log "✅ Tout est prêt. Ollama écoute sur le port $PORT."
-    echo ""
+  
+  echo ""
   echo "🌐 Vous pouvez maintenant ouvrir votre navigateur :"
   echo "   👉 http://127.0.0.1:8080 😊"
   echo ""
 
+  echo "✅ Tout est prêt."
