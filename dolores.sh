@@ -189,29 +189,6 @@ def index():
 
 # === FRONTEND ===
 INDEX_HTML = """
-cat > /tmp/server.py <<'PYCODE'
-#!/usr/bin/env python3
-import os, json, requests
-from flask import Flask, request, Response, render_template_string
-
-# --- OpenAI SDK (optionnel) ---
-try:
-    from openai import OpenAI
-except ImportError:
-    OpenAI = None
-
-# --- Config ---
-OLLAMA_HOST  = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-OPENAI_MODEL   = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "").strip()
-OPENAI_ORG_ID   = os.getenv("OPENAI_ORG_ID", "").strip()
-
-app = Flask(__name__)
-
-# --- Page HTML (index) ---
-INDEX_HTML = r"""
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -445,6 +422,7 @@ def api_openai():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, threaded=True)
+    
 PYCODE
 
 
