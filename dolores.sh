@@ -372,10 +372,6 @@ PYCODE
 
 pkill -f server.py || true
   nohup python /tmp/server.py >/tmp/bridge.log 2>&1 &
-  echo ""
-  echo "🌐 Vous pouvez maintenant ouvrir votre navigateur :"
-  echo "   👉 http://127.0.0.1:8080 😊"
-  echo ""
 else
   log "Bridge Flask désactivé par l’utilisateur."
 fi
