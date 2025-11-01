@@ -124,251 +124,35 @@ if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
   cat > /tmp/server.py <<'PYCODE'
 #!/usr/bin/env python3
 import os, json, requests
-from flask import Flask, request, Response
+from flask import Flask, request, Response, render_template_string
 
 try:
     from openai import OpenAI
 except ImportError:
     OpenAI = None
 
+# === Configuration ===
 OLLAMA_HOST  = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL   = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")
+OPENAI_ORG_ID   = os.getenv("OPENAI_ORG_ID", "")
 
 app = Flask(__name__)
 
-def get_openai_client():
-    if not OPENAI_API_KEY or OpenAI is None:
-        return None
-    return OpenAI(api_key=OPENAI_API_KEY)
-
-def stream_openai(prompt):
-    client = get_openai_client()
-    if not client: return
-    stream = client.chat.completions.create(
-        model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        stream=True,
-    )
-    for chunk in stream:
-        delta = chunk.choices[0].delta
-        if delta and delta.content:
-            yield delta.content
-
-def stream_ollama(prompt):
-    url = f"{OLLAMA_HOST}/api/generate"
-    data = {"model": OLLAMA_MODEL, "prompt": prompt, "stream": True}
-    with requests.post(url, json=data, stream=True) as r:
-        for line in r.iter_lines():
-            if not line: continue
-            try: j = json.loads(line.decode())
-            except Exception: continue
-            if "response" in j: yield j["response"]
-            if j.get("done"): break
-
-@app.route("/api/ollama", methods=["POST"])
-def api_ollama():
-    prompt = request.json.get("prompt", "")
-    return Response(stream_ollama(prompt), mimetype="text/plain")
-
-@app.route("/api/openai", methods=["POST"])
-def api_openai():
-    if not OPENAI_API_KEY or OpenAI is None:
-        return Response("OpenAI API non configurée.", status=503)
-    user_prompt = request.json.get("user_prompt", "")
-    local_reply = request.json.get("local_reply", "")
-    extra = request.json.get("extra_instruction", "")
-    full = f"Question : {user_prompt}\nRéponse locale : {local_reply}\n{extra}"
-    return Response(stream_openai(full), mimetype="text/plain")
-
-@app.route("/")
-def index():
-    return "<h3>Bridge actif sur /api/ollama et /api/openai</h3>"
-
-
-# === FRONTEND ===
-INDEX_HTML = """
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<title>Bridge Ollama <-> OpenAI</title>
-
-<!-- Markdown -->
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
-<!-- MathJax pour le LaTeX -->
-<script>
-window.MathJax = {
-  tex: {
-    inlineMath: [['$', '$'], ['\\(', '\\)']],
-    displayMath: [['$$', '$$'], ['\\[', '\\]']],
-    processEscapes: true
-  },
-  options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] },
-  startup: { typeset: false }
-};
-</script>
-<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-
-<style>
-  body { font-family: system-ui, monospace; background:#111; color:#eee; margin:0; padding:20px; }
-  #chat { background:#181818; padding:10px; border-radius:8px; min-height:320px; overflow-y:auto; }
-  .message { padding:6px 4px; border-bottom:1px solid #2a2a2a; }
-  .user  { color:#6cc2ff; }
-  .ollama{ color:#91f2a7; }
-  .gpt   { color:#ffc78a; }
-  textarea { width:100%; background:#202020; color:#eee; border:1px solid #333; padding:10px; border-radius:6px; }
-  #prompt { height:70px; margin-top:10px; }
-  #extra  { height:44px; font-size:0.9em; opacity:0.85; margin-top:6px; }
-  #extra:focus { opacity:1; }
-  button { margin:6px 6px 0 0; padding:9px 16px; background:#2b2b2b; color:#eee;
-           border:1px solid #4a4a4a; cursor:pointer; border-radius:6px; }
-  button:hover { background:#3a3a3a; }
-  #status { color:#aaa; margin-top:8px; font-style:italic; }
-</style>
-</head>
-<body>
-<h2>🧠 Bridge Ollama ↔ OpenAI</h2>
-<div id="chat"></div>
-
-<textarea id="prompt" placeholder="Écris ton message… (Markdown & LaTeX ok)"></textarea>
-<textarea id="extra"  placeholder="(Optionnel) Instruction supplémentaire — ex. 'Traduis en anglais'"></textarea><br/>
-
-<button onclick="btnOllama()">Réponse Ollama</button>
-<button onclick="btnSubmitGPT()">Soumettre à GPT</button>
-<button onclick="btnReturnLocal()">Renvoyer au local</button>
-<button onclick="copyChat()">Copier la discussion</button>
-<span id="copyok" style="margin-left:8px;color:#8f8;"></span>
-<div id="status"></div>
-
-<script>
-let lastUserPrompt = "";
-let lastLocalText  = "";
-let lastGptText    = "";
-
-// Render Markdown + LaTeX
-async function renderMarkdown(container, text) {
-  container.innerHTML = marked.parse(text);
-  if (window.MathJax && window.MathJax.typesetPromise) {
-    await MathJax.typesetClear([container]);
-    await MathJax.typesetPromise([container]);
-  }
-}
-
-// Append message
-function addLine(roleClass, rawText, prefix="") {
-  const chat = document.getElementById("chat");
-  const div = document.createElement("div");
-  div.classList.add("message", roleClass);
-  chat.appendChild(div);
-  renderMarkdown(div, (prefix ? prefix + " " : "") + rawText);
-  chat.scrollTop = chat.scrollHeight;
-  return div;
-}
-
-// Build payload (inject extra instruction into prompt)
-function getPayload(basePrompt, includeInstruction=true) {
-  const extra = document.getElementById("extra").value.trim();
-  if (includeInstruction && extra) {
-    return { prompt: basePrompt + "\\n\\n[Instruction: " + extra + "]" };
-  }
-  return { prompt: basePrompt };
-}
-
-// Generic stream fetch
-async function streamTo(url, payload, roleClass, statusLabel) {
-  const status = document.getElementById("status");
-  const chat   = document.getElementById("chat");
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(payload)
-  });
-  if (!resp.ok) throw new Error("HTTP " + resp.status);
-
-  const reader  = resp.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  const liveDiv = document.createElement("div");
-  liveDiv.classList.add("message", roleClass);
-  chat.appendChild(liveDiv);
-
-  status.textContent = "⏳ " + statusLabel + "…";
-  let collected = "";
-
-  while (true) {
-    const {value, done} = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value);
-    collected += chunk;
-    await renderMarkdown(liveDiv, collected);
-    chat.scrollTop = chat.scrollHeight;
-  }
-
-  status.textContent = "✅ " + statusLabel + " terminé";
-  return collected.trim();
-}
-
-// Buttons
-async function btnOllama() {
-  const promptEl = document.getElementById("prompt");
-  const prompt = promptEl.value.trim();
-  if (!prompt) return;
-  lastUserPrompt = prompt;
-  addLine("user", prompt, "🧍");
-  promptEl.value = "";
-  const payload = getPayload(prompt, true);
-  const out = await streamTo("/api/ollama", payload, "ollama", "Ollama");
-  lastLocalText = out || lastLocalText;
-}
-
-async function btnSubmitGPT() {
-  if (!lastUserPrompt && !lastLocalText) return;
-  const extra = document.getElementById("extra").value.trim();
-  const out = await streamTo("/api/openai", {
-    user_prompt: lastUserPrompt,
-    local_reply: lastLocalText,
-    extra_instruction: extra
-  }, "gpt", "GPT");
-  lastGptText = out || lastGptText;
-}
-
-async function btnReturnLocal() {
-  const toSend = lastGptText || document.getElementById("prompt").value.trim();
-  if (!toSend) return;
-  const payload = getPayload(toSend, true);
-  const out = await streamTo("/api/ollama", payload, "ollama", "Ollama");
-  lastLocalText = out || lastLocalText;
-}
-
-async function copyChat() {
-  const chatElem = document.getElementById("chat");
-  const text = chatElem ? chatElem.innerText.trim() : "";
-  const badge = document.getElementById("copyok");
-  if (!text) { badge.textContent = "Rien à copier"; setTimeout(()=>badge.textContent="",1200); return; }
-  try {
-    await navigator.clipboard.writeText(text);
-    badge.textContent = "📋 Copié";
-    setTimeout(()=>badge.textContent="",1500);
-  } catch(e) {
-    badge.textContent = "⚠️ Échec";
-    setTimeout(()=>badge.textContent="",1500);
-  }
-}
-</script>
-</body>
-</html>
-"""
-
+# === OpenAI client ===
 def get_openai_client():
     if not OPENAI_API_KEY or OpenAI is None:
         return None
     kwargs = {"api_key": OPENAI_API_KEY}
-    if OPENAI_BASE_URL: kwargs["base_url"] = OPENAI_BASE_URL
-    if OPENAI_ORG_ID:   kwargs["organization"] = OPENAI_ORG_ID
+    if OPENAI_BASE_URL:
+        kwargs["base_url"] = OPENAI_BASE_URL
+    if OPENAI_ORG_ID:
+        kwargs["organization"] = OPENAI_ORG_ID
     return OpenAI(**kwargs)
 
+# === Streaming ===
 def stream_openai(prompt):
     client = get_openai_client()
     if not client:
@@ -388,13 +172,155 @@ def stream_ollama(prompt):
     data = {"model": OLLAMA_MODEL, "prompt": prompt, "stream": True}
     with requests.post(url, json=data, stream=True) as r:
         for line in r.iter_lines():
-            if not line: continue
-            try: j = json.loads(line.decode())
-            except Exception: continue
-            if "response" in j: yield j["response"]
-            if j.get("done"): break
+            if not line:
+                continue
+            try:
+                j = json.loads(line.decode())
+            except Exception:
+                continue
+            if "response" in j:
+                yield j["response"]
+            if j.get("done"):
+                break
 
-# --- Routes ---
+# === HTML principal ===
+INDEX_HTML = """
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>🧠 Bridge Dolores ↔ OpenAI</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+  body { font-family: system-ui, monospace; background:#111; color:#eee; margin:0; padding:20px; }
+  h2 { color:#8f8; }
+  #chat { background:#181818; padding:10px; border-radius:8px; min-height:320px; overflow-y:auto; }
+  .message { padding:6px 4px; border-bottom:1px solid #2a2a2a; }
+  .user  { color:#6cc2ff; }
+  .ollama{ color:#91f2a7; }
+  .gpt   { color:#ffc78a; }
+  textarea { width:100%; background:#202020; color:#eee; border:1px solid #333; padding:10px; border-radius:6px; }
+  #prompt { height:70px; margin-top:10px; }
+  #extra  { height:44px; font-size:0.9em; opacity:0.85; margin-top:6px; }
+  #extra:focus { opacity:1; }
+  button { margin:6px 6px 0 0; padding:9px 16px; background:#2b2b2b; color:#eee;
+           border:1px solid #4a4a4a; cursor:pointer; border-radius:6px; }
+  button:hover { background:#3a3a3a; }
+  #status { color:#aaa; margin-top:8px; font-style:italic; }
+</style>
+</head>
+<body>
+<h2>✅ Bridge actif — Ollama ↔ OpenAI</h2>
+<div id="chat"></div>
+
+<textarea id="prompt" placeholder="Écris ton message… (Markdown & LaTeX ok)"></textarea>
+<textarea id="extra"  placeholder="(Optionnel) Instruction supplémentaire — ex. 'Traduis en anglais'"></textarea><br/>
+
+<button onclick="btnOllama()">Réponse Ollama</button>
+<button onclick="btnSubmitGPT()">Soumettre à GPT</button>
+<button onclick="btnReturnLocal()">Renvoyer au local</button>
+<button onclick="copyChat()">Copier la discussion</button>
+<span id="copyok" style="margin-left:8px;color:#8f8;"></span>
+<div id="status"></div>
+
+<script>
+let lastUserPrompt = "", lastLocalText = "", lastGptText = "";
+
+async function renderMarkdown(container, text) {
+  container.innerHTML = marked.parse(text);
+  if (window.MathJax && window.MathJax.typesetPromise) {
+    await MathJax.typesetClear([container]);
+    await MathJax.typesetPromise([container]);
+  }
+}
+function addLine(roleClass, rawText, prefix="") {
+  const chat = document.getElementById("chat");
+  const div = document.createElement("div");
+  div.classList.add("message", roleClass);
+  chat.appendChild(div);
+  renderMarkdown(div, (prefix ? prefix + " " : "") + rawText);
+  chat.scrollTop = chat.scrollHeight;
+  return div;
+}
+function getPayload(basePrompt, includeInstruction=true) {
+  const extra = document.getElementById("extra").value.trim();
+  if (includeInstruction && extra) return { prompt: basePrompt + "\\n\\n[Instruction: " + extra + "]" };
+  return { prompt: basePrompt };
+}
+async function streamTo(url, payload, roleClass, statusLabel) {
+  const status = document.getElementById("status");
+  const chat = document.getElementById("chat");
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  const liveDiv = document.createElement("div");
+  liveDiv.classList.add("message", roleClass);
+  chat.appendChild(liveDiv);
+  status.textContent = "⏳ " + statusLabel + "…";
+  let collected = "";
+  while (true) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value);
+    collected += chunk;
+    await renderMarkdown(liveDiv, collected);
+    chat.scrollTop = chat.scrollHeight;
+  }
+  status.textContent = "✅ " + statusLabel + " terminé";
+  return collected.trim();
+}
+async function btnOllama() {
+  const promptEl = document.getElementById("prompt");
+  const prompt = promptEl.value.trim();
+  if (!prompt) return;
+  lastUserPrompt = prompt;
+  addLine("user", prompt, "🧍");
+  promptEl.value = "";
+  const payload = getPayload(prompt, true);
+  const out = await streamTo("/api/ollama", payload, "ollama", "Ollama");
+  lastLocalText = out || lastLocalText;
+}
+async function btnSubmitGPT() {
+  if (!lastUserPrompt && !lastLocalText) return;
+  const extra = document.getElementById("extra").value.trim();
+  const out = await streamTo("/api/openai", {
+    user_prompt: lastUserPrompt,
+    local_reply: lastLocalText,
+    extra_instruction: extra
+  }, "gpt", "GPT");
+  lastGptText = out || lastGptText;
+}
+async function btnReturnLocal() {
+  const toSend = lastGptText || document.getElementById("prompt").value.trim();
+  if (!toSend) return;
+  const payload = getPayload(toSend, true);
+  const out = await streamTo("/api/ollama", payload, "ollama", "Ollama");
+  lastLocalText = out || lastLocalText;
+}
+async function copyChat() {
+  const chatElem = document.getElementById("chat");
+  const text = chatElem ? chatElem.innerText.trim() : "";
+  const badge = document.getElementById("copyok");
+  if (!text) { badge.textContent="Rien à copier"; setTimeout(()=>badge.textContent="",1200); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    badge.textContent="📋 Copié"; setTimeout(()=>badge.textContent="",1500);
+  } catch(e) {
+    badge.textContent="⚠️ Échec"; setTimeout(()=>badge.textContent="",1500);
+  }
+}
+</script>
+</body>
+</html>
+"""
+
+# === Routes ===
 @app.route("/")
 def index():
     return render_template_string(INDEX_HTML)
@@ -422,7 +348,7 @@ def api_openai():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, threaded=True)
-    
+
 PYCODE
 
 
