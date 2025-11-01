@@ -381,7 +381,13 @@ else
 fi
 
 # === Étape 6 : Lancement d’Ollama en arrière-plan ===
+
+# === Étape 6 : Lancement d’Ollama en arrière-plan ===
+
+
 log "Lancement du serveur Ollama (port $PORT)..."
+
+
 $SUDO docker run -d "${GPU_FLAG[@]}" \
   -p "$PORT:$PORT" \
   -v "$VOLUME":/root/.ollama \
@@ -390,7 +396,7 @@ $SUDO docker run -d "${GPU_FLAG[@]}" \
   -e OLLAMA_NUM_PARALLEL=1 \
   -e OLLAMA_MAX_LOADED_MODELS=1 \
   "$IMAGE" \
-  bash -lc "ollama serve" > /dev/null
+  bash -lc "ollama serve" >/dev/null
 
   log "✅ Tout est prêt. Ollama écoute sur le port $PORT."
     echo ""
