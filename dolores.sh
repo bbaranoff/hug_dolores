@@ -123,118 +123,123 @@ if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
   # === écriture du code Python ===
   cat > /tmp/server.py <<'PYCODE'
 #!/usr/bin/env python3
-import os, json, requests
+import os
+import json
+import requests
 from flask import Flask, request, Response, render_template_string
 
-try:
-    from openai import OpenAI
-except ImportError:
-    OpenAI = None
-
-# === Configuration ===
-OLLAMA_HOST  = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+# === CONFIGURATION ===
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-OPENAI_MODEL   = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")
-OPENAI_ORG_ID   = os.getenv("OPENAI_ORG_ID", "")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 app = Flask(__name__)
 
-# === OpenAI client ===
-def get_openai_client():
-    if not OPENAI_API_KEY or OpenAI is None:
-        return None
-    kwargs = {"api_key": OPENAI_API_KEY}
-    if OPENAI_BASE_URL:
-        kwargs["base_url"] = OPENAI_BASE_URL
-    if OPENAI_ORG_ID:
-        kwargs["organization"] = OPENAI_ORG_ID
-    return OpenAI(**kwargs)
-
-# === Streaming ===
-def stream_openai(prompt):
-    client = get_openai_client()
-    if not client:
-        return
-    stream = client.chat.completions.create(
-        model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        stream=True,
-    )
-    for chunk in stream:
-        delta = chunk.choices[0].delta
-        if delta and delta.content:
-            yield delta.content
-
-def stream_ollama(prompt):
+# === STREAM OLLAMA ===
+def stream_ollama(prompt: str):
     url = f"{OLLAMA_HOST}/api/generate"
     data = {"model": OLLAMA_MODEL, "prompt": prompt, "stream": True}
-    with requests.post(url, json=data, stream=True) as r:
-        for line in r.iter_lines():
-            if not line:
-                continue
-            try:
-                j = json.loads(line.decode())
-            except Exception:
-                continue
-            if "response" in j:
-                yield j["response"]
-            if j.get("done"):
-                break
+    try:
+        with requests.post(url, json=data, stream=True) as r:
+            for line in r.iter_lines():
+                if not line:
+                    continue
+                try:
+                    j = json.loads(line.decode("utf-8"))
+                except Exception:
+                    continue
+                if "response" in j:
+                    yield j["response"]
+                if j.get("done"):
+                    break
+    except Exception as e:
+        yield f"[Erreur Ollama] {e}"
 
-# === HTML principal ===
+# === STREAM OPENAI ===
+def stream_openai(prompt: str):
+    if not OPENAI_API_KEY:
+        yield "[⚠️ Aucun jeton OpenAI configuré]"
+        return
+    try:
+        import openai
+        openai.api_key = OPENAI_API_KEY
+        stream = openai.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            stream=True
+        )
+        for chunk in stream:
+            delta = chunk.choices[0].delta
+            if delta and delta.content:
+                yield delta.content
+    except Exception as e:
+        yield f"[Erreur OpenAI] {e}"
+
+# === ROUTES ===
+@app.route("/")
+def index():
+    return render_template_string(INDEX_HTML)
+
+@app.route("/api/ollama", methods=["POST"])
+def api_ollama():
+    prompt = request.json.get("prompt", "")
+    return Response(stream_ollama(prompt), mimetype="text/plain")
+
+@app.route("/api/openai", methods=["POST"])
+def api_openai():
+    user_prompt = request.json.get("user_prompt", "")
+    local_reply = request.json.get("local_reply", "")
+    extra_instruction = request.json.get("extra_instruction", "")
+
+    full_instruction = (
+        f"L’utilisateur a posé :\n\n{user_prompt}\n\n"
+        f"Le modèle local a répondu :\n\n{local_reply}\n\n"
+        "Analyse cette réponse et améliore-la."
+    )
+    if extra_instruction:
+        full_instruction += f"\n\nInstruction : {extra_instruction}"
+
+    return Response(stream_openai(full_instruction), mimetype="text/plain")
+
+# === FRONTEND HTML ===
 INDEX_HTML = """
 <!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>🧠 Bridge Dolores ↔ OpenAI</title>
+<title>Bridge Ollama ↔ OpenAI</title>
 
-<!-- Markdown -->
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
-<!-- MathJax 3 (LaTeX rendering) -->
-<script>
-window.MathJax = {
-  tex: {
-    inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
-    displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']],
-    processEscapes: true,
-    processEnvironments: true
-  },
-  svg: { fontCache: 'global' },
-  startup: {
-    typeset: false // we'll trigger manually after each update
-  }
-};
-</script>
-<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<!-- KaTeX + Marked -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 
 <style>
   body { font-family: system-ui, monospace; background:#111; color:#eee; margin:0; padding:20px; }
-  h2 { color:#8f8; }
-  #chat { background:#181818; padding:10px; border-radius:8px; min-height:320px; overflow-y:auto; }
-  .message { padding:6px 4px; border-bottom:1px solid #2a2a2a; }
-  .user  { color:#6cc2ff; }
-  .ollama{ color:#91f2a7; }
-  .gpt   { color:#ffc78a; }
-  textarea { width:100%; background:#202020; color:#eee; border:1px solid #333; padding:10px; border-radius:6px; }
-  #prompt { height:70px; margin-top:10px; }
-  #extra  { height:44px; font-size:0.9em; opacity:0.85; margin-top:6px; }
+  #chat { background:#181818; padding:10px; border-radius:6px; min-height:300px; overflow-y:auto; }
+  .user { color:#6cf; margin-bottom:8px; }
+  .ollama { color:#8f8; margin-bottom:8px; }
+  .gpt { color:#fc8; margin-bottom:8px; }
+  textarea { width:100%; background:#222; color:#eee; border:none; padding:10px; border-radius:6px; }
+  #prompt { height:60px; margin-top:10px; }
+  #extra  { height:40px; font-size:0.9em; opacity:0.8; margin-top:5px; }
   #extra:focus { opacity:1; }
-  button { margin:6px 6px 0 0; padding:9px 16px; background:#2b2b2b; color:#eee;
-           border:1px solid #4a4a4a; cursor:pointer; border-radius:6px; }
-  button:hover { background:#3a3a3a; }
-  #status { color:#aaa; margin-top:8px; font-style:italic; }
+  button { margin:5px; padding:8px 15px; background:#333; color:#eee;
+           border:1px solid #555; cursor:pointer; border-radius:4px; }
+  button:hover { background:#444; }
+  #status { color:#888; margin-top:5px; font-style:italic; }
+  .message { padding:6px; border-bottom:1px solid #333; }
 </style>
 </head>
 <body>
-<h2>✅ Bridge actif — Ollama ↔ OpenAI (LaTeX pris en charge)</h2>
+<h2>🧠 Bridge Ollama ↔ OpenAI</h2>
+
 <div id="chat"></div>
 
-<textarea id="prompt" placeholder="Écris ton message… (Markdown & LaTeX ok)"></textarea>
-<textarea id="extra"  placeholder="(Optionnel) Instruction supplémentaire — ex. 'Traduis en anglais'"></textarea><br/>
+<textarea id="prompt" placeholder="Écris ton message ici..."></textarea>
+<textarea id="extra" placeholder="(Optionnel) Instruction supplémentaire"></textarea><br/>
 
 <button onclick="btnOllama()">Réponse Ollama</button>
 <button onclick="btnSubmitGPT()">Soumettre à GPT</button>
@@ -244,15 +249,31 @@ window.MathJax = {
 <div id="status"></div>
 
 <script>
-let lastUserPrompt = "", lastLocalText = "", lastGptText = "";
+let lastUserPrompt = "";
+let lastLocalText = "";
+let lastGptText   = "";
 
+// ===== Markdown + KaTeX =====
 async function renderMarkdown(container, text) {
-  container.innerHTML = marked.parse(text);
-  if (window.MathJax && window.MathJax.typesetPromise) {
-    await MathJax.typesetClear([container]);
-    await MathJax.typesetPromise([container]);
+  if (!window.marked) return;
+  marked.setOptions({ breaks: true, mangle: false, headerIds: false });
+  container.innerHTML = marked.parse(text || "");
+
+  if (typeof renderMathInElement === "function") {
+    renderMathInElement(container, {
+      delimiters: [
+        { left: "$$", right: "$$", display: true },
+        { left: "$", right: "$", display: false },
+        { left: "\\(", right: "\\)", display: false },
+        { left: "\\[", right: "\\]", display: true }
+      ],
+      throwOnError: false,
+      strict: "ignore"
+    });
   }
 }
+
+// ===== Ajout de message =====
 function addLine(roleClass, rawText, prefix="") {
   const chat = document.getElementById("chat");
   const div = document.createElement("div");
@@ -262,11 +283,8 @@ function addLine(roleClass, rawText, prefix="") {
   chat.scrollTop = chat.scrollHeight;
   return div;
 }
-function getPayload(basePrompt, includeInstruction=true) {
-  const extra = document.getElementById("extra").value.trim();
-  if (includeInstruction && extra) return { prompt: basePrompt + "\\n\\n[Instruction: " + extra + "]" };
-  return { prompt: basePrompt };
-}
+
+// ===== Streaming =====
 async function streamTo(url, payload, roleClass, statusLabel) {
   const status = document.getElementById("status");
   const chat = document.getElementById("chat");
@@ -275,14 +293,18 @@ async function streamTo(url, payload, roleClass, statusLabel) {
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify(payload)
   });
-  if (!resp.ok) throw new Error("HTTP " + resp.status);
+
+  if (!resp.ok) throw new Error("Erreur HTTP : " + resp.status);
+
   const reader = resp.body.getReader();
   const decoder = new TextDecoder("utf-8");
   const liveDiv = document.createElement("div");
   liveDiv.classList.add("message", roleClass);
   chat.appendChild(liveDiv);
+
   status.textContent = "⏳ " + statusLabel + "…";
   let collected = "";
+
   while (true) {
     const {value, done} = await reader.read();
     if (done) break;
@@ -291,47 +313,61 @@ async function streamTo(url, payload, roleClass, statusLabel) {
     await renderMarkdown(liveDiv, collected);
     chat.scrollTop = chat.scrollHeight;
   }
+
   status.textContent = "✅ " + statusLabel + " terminé";
   return collected.trim();
 }
+
+// ===== Actions =====
 async function btnOllama() {
   const promptEl = document.getElementById("prompt");
   const prompt = promptEl.value.trim();
   if (!prompt) return;
+
   lastUserPrompt = prompt;
   addLine("user", prompt, "🧍");
   promptEl.value = "";
-  const payload = getPayload(prompt, true);
-  const out = await streamTo("/api/ollama", payload, "ollama", "Ollama");
-  lastLocalText = out || lastLocalText;
+
+  const out = await streamTo("/api/ollama", { prompt }, "ollama", "Ollama");
+  lastLocalText = out;
 }
+
 async function btnSubmitGPT() {
   if (!lastUserPrompt && !lastLocalText) return;
   const extra = document.getElementById("extra").value.trim();
+
   const out = await streamTo("/api/openai", {
     user_prompt: lastUserPrompt,
     local_reply: lastLocalText,
     extra_instruction: extra
   }, "gpt", "GPT");
-  lastGptText = out || lastGptText;
+
+  lastGptText = out;
 }
+
 async function btnReturnLocal() {
   const toSend = lastGptText || document.getElementById("prompt").value.trim();
   if (!toSend) return;
-  const payload = getPayload(toSend, true);
-  const out = await streamTo("/api/ollama", payload, "ollama", "Ollama");
-  lastLocalText = out || lastLocalText;
+  const out = await streamTo("/api/ollama", { prompt: toSend }, "ollama", "Ollama");
+  lastLocalText = out;
 }
+
 async function copyChat() {
   const chatElem = document.getElementById("chat");
   const text = chatElem ? chatElem.innerText.trim() : "";
   const badge = document.getElementById("copyok");
-  if (!text) { badge.textContent="Rien à copier"; setTimeout(()=>badge.textContent="",1200); return; }
+  if (!text) {
+    badge.textContent = "Rien à copier";
+    setTimeout(() => badge.textContent = "", 1200);
+    return;
+  }
   try {
     await navigator.clipboard.writeText(text);
-    badge.textContent="📋 Copié"; setTimeout(()=>badge.textContent="",1500);
-  } catch(e) {
-    badge.textContent="⚠️ Échec"; setTimeout(()=>badge.textContent="",1500);
+    badge.textContent = "📋 Copié";
+    setTimeout(() => badge.textContent = "", 1500);
+  } catch {
+    badge.textContent = "⚠️ Échec";
+    setTimeout(() => badge.textContent = "", 1500);
   }
 }
 </script>
