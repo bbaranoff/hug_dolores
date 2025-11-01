@@ -216,7 +216,7 @@ INDEX_HTML = r"""
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Bridge Ollama ↔ OpenAI</title>
+<title>Bridge Ollama <-> OpenAI</title>
 
 <!-- Markdown -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
