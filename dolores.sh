@@ -190,8 +190,27 @@ INDEX_HTML = """
 <head>
 <meta charset="UTF-8">
 <title>🧠 Bridge Dolores ↔ OpenAI</title>
+
+<!-- Markdown -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<!-- MathJax 3 (LaTeX rendering) -->
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+    displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']],
+    processEscapes: true,
+    processEnvironments: true
+  },
+  svg: { fontCache: 'global' },
+  startup: {
+    typeset: false // we'll trigger manually after each update
+  }
+};
+</script>
 <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
 <style>
   body { font-family: system-ui, monospace; background:#111; color:#eee; margin:0; padding:20px; }
   h2 { color:#8f8; }
@@ -211,7 +230,7 @@ INDEX_HTML = """
 </style>
 </head>
 <body>
-<h2>✅ Bridge actif — Ollama ↔ OpenAI</h2>
+<h2>✅ Bridge actif — Ollama ↔ OpenAI (LaTeX pris en charge)</h2>
 <div id="chat"></div>
 
 <textarea id="prompt" placeholder="Écris ton message… (Markdown & LaTeX ok)"></textarea>
