@@ -377,12 +377,7 @@ else
 fi
 
 # === Étape 6 : Lancement d’Ollama en arrière-plan ===
-
-# === Étape 6 : Lancement d’Ollama en arrière-plan ===
-
-
 log "Lancement du serveur Ollama (port $PORT)..."
-
 
 $SUDO docker run -d "${GPU_FLAG[@]}" \
   -p "$PORT:$PORT" \
