@@ -352,7 +352,7 @@ if __name__ == "__main__":
 PYCODE
 
 
-
+pkill -f server.py || true
   nohup python /tmp/server.py >/tmp/bridge.log 2>&1 &
   echo ""
   echo "🌐 Vous pouvez maintenant ouvrir votre navigateur :"
