@@ -77,7 +77,7 @@ else
   CONTEXT=8192; CACHE_TYPE="f16"
 fi
 
-# === Étape 5 : Pull de l’image ===
+# === Étape 4 : Pull de l’image ===
 log "Préparation du conteneur $IMAGE..."
 if [ "$PULL_PROGRESS" -eq 1 ]; then
   $SUDO docker pull "$IMAGE" || log "Image locale déjà présente."
@@ -85,19 +85,8 @@ else
   $SUDO docker pull -q "$IMAGE" || log "Image locale utilisée."
 fi
 
-# === Étape 6 : Lancement d’Ollama en arrière-plan ===
-log "Lancement du serveur Ollama (port $PORT)..."
-$SUDO docker run -d --rm "${GPU_FLAG[@]}" \
-  -p "$PORT:$PORT" \
-  -v "$VOLUME":/root/.ollama \
-  -e OLLAMA_HOST="0.0.0.0:$PORT" \
-  -e OLLAMA_KV_CACHE_TYPE="$CACHE_TYPE" \
-  -e OLLAMA_NUM_PARALLEL=1 \
-  -e OLLAMA_MAX_LOADED_MODELS=1 \
-  "$IMAGE" \
-  bash -lc "ollama serve" >/dev/null
 
-# === Étape 8 : Bridge Flask (optionnel) ===
+# === Étape 5 : Bridge Flask (optionnel) ===
 read -rp "⚙️  Souhaitez-vous activer le bridge API Flask (Dolores ↔ OpenAI) ? [y/N] " ENABLE_API
 if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
   log "Activation du bridge Flask (API)..."
@@ -391,6 +380,14 @@ else
   log "Bridge Flask désactivé par l’utilisateur."
 fi
 
-# === Étape finale : Interaction CLI ===
-log "✅ Tout est prêt. Ollama écoute sur le port $PORT."
-echo "Tapez : curl http://127.0.0.1:$PORT/api/tags"
+# === Étape 6 : Lancement d’Ollama en arrière-plan ===
+log "Lancement du serveur Ollama (port $PORT)..."
+$SUDO docker run "${GPU_FLAG[@]}" \
+  -p "$PORT:$PORT" \
+  -v "$VOLUME":/root/.ollama \
+  -e OLLAMA_HOST="0.0.0.0:$PORT" \
+  -e OLLAMA_KV_CACHE_TYPE="$CACHE_TYPE" \
+  -e OLLAMA_NUM_PARALLEL=1 \
+  -e OLLAMA_MAX_LOADED_MODELS=1 \
+  "$IMAGE" \
+  bash -lc "ollama serve"
