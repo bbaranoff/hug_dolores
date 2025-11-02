@@ -98,7 +98,9 @@ if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
   python3 -m venv /tmp/.env_dolores
   source /tmp/.env_dolores/bin/activate
   pip install --no-cache-dir flask requests openai > /dev/null
-  cat > /tmp/server.py <<'PYCODE'#!/usr/bin/env python3
+  cat > /tmp/server.py <<'PYCODE'
+  
+#!/usr/bin/env python3
 import os, json, requests
 from flask import Flask, request, Response, render_template_string
 
