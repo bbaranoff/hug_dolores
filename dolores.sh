@@ -99,37 +99,26 @@ if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
   source /tmp/.env_dolores/bin/activate
   pip install --no-cache-dir flask requests openai > /dev/null
   cat > /tmp/server.py <<'PYCODE'
- #!/usr/bin/env python3
+#!/usr/bin/env python3
 import os, json, requests
-from flask import Flask, request, Response, render_template_string, session
+from flask import Flask, request, Response, render_template_string
 
 app = Flask(__name__)
-app.secret_key = "dolores_local_secret"
 
 OLLAMA_HOST = "http://localhost:11434"
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-
-# === Historique : capture dans une variable locale ===
-def get_history_copy():
-    hist = session.get("chat_history", [])
-    if not isinstance(hist, list):
-        hist = []
-    return hist.copy()
-
-def save_history_copy(hist):
-    # Mise à jour de la session à la fin seulement (hors streaming)
-    session["chat_history"] = hist
-    session.modified = True
+# === Mémoire globale partagée (un seul fil de discussion) ===
+CHAT_HISTORY = []
 
 
 # === Streaming Ollama ===
 def stream_ollama(prompt: str):
-    hist = get_history_copy()         # Copie locale = sûr hors contexte
-    hist.append({"role": "user", "content": prompt})
-    data = {"model": OLLAMA_MODEL, "messages": hist, "stream": True}
+    global CHAT_HISTORY
+    CHAT_HISTORY.append({"role": "user", "content": prompt})
+    data = {"model": OLLAMA_MODEL, "messages": CHAT_HISTORY, "stream": True}
     url = f"{OLLAMA_HOST}/api/chat"
     full_reply = ""
 
@@ -152,10 +141,7 @@ def stream_ollama(prompt: str):
     except Exception as e:
         yield f"[Erreur Ollama] {e}"
 
-    # On remet à jour la session *après* le streaming
-    hist.append({"role": "assistant", "content": full_reply})
-    with app.app_context():
-        save_history_copy(hist)
+    CHAT_HISTORY.append({"role": "assistant", "content": full_reply})
 
 
 # === Streaming OpenAI ===
@@ -184,12 +170,14 @@ def stream_openai(prompt: str):
 def index():
     return render_template_string(INDEX_HTML)
 
+
 @app.route("/api/ollama", methods=["POST"])
 def api_ollama():
     prompt = request.json.get("prompt", "")
     if not prompt:
         return Response("[Erreur] Aucun prompt fourni.", mimetype="text/plain")
     return Response(stream_ollama(prompt), mimetype="text/plain")
+
 
 @app.route("/api/openai", methods=["POST"])
 def api_openai():
@@ -204,8 +192,60 @@ def api_openai():
         f"Le modèle local (Dolores) a répondu :\n{local_reply}\n\n"
         f"Analyse cette réponse, {directive}."
     )
+
     return Response(stream_openai(full_instruction), mimetype="text/plain")
-    
+
+
+@app.route("/api/copy", methods=["POST"])
+def api_copy():
+    user_prompt = request.json.get("user_prompt", "")
+    local_reply = request.json.get("local_reply", "")
+
+    full_text = (
+        f"L’utilisateur a posé :\n{user_prompt}\n\n"
+        f"Le modèle local (Dolores) a répondu :\n{local_reply}"
+    )
+
+    return Response(full_text, mimetype="text/plain")
+
+
+@app.route("/api/send_to_gpt", methods=["POST"])
+def api_send_to_gpt():
+    user_prompt = request.json.get("user_prompt", "")
+    extra_instruction = request.json.get("extra_instruction", "").strip()
+
+    full_instruction = (
+        f"L’utilisateur a posé :\n{user_prompt}\n\n"
+        f"Analyse et corrige, puis pose la question suivante."
+    )
+
+    return Response(stream_openai(full_instruction), mimetype="text/plain")
+
+
+@app.route("/api/return_to_local", methods=["POST"])
+def api_return_to_local():
+    user_prompt = request.json.get("user_prompt", "")
+    extra_instruction = request.json.get("extra_instruction", "").strip()
+
+    full_instruction = (
+        f"L’utilisateur a posé :\n{user_prompt}\n\n"
+        f"Réponds en local."
+    )
+
+    return Response(stream_ollama(full_instruction), mimetype="text/plain")
+
+
+@app.route("/api/copy_message", methods=["POST"])
+def api_copy_message():
+    user_prompt = request.json.get("user_prompt", "")
+    full_text = (
+        f"L’utilisateur a posé :\n{user_prompt}"
+    )
+
+    return Response(full_text, mimetype="text/plain")
+
+
+
 # === FRONTEND HTML ===
 INDEX_HTML = """
 <!DOCTYPE html>
