@@ -98,8 +98,7 @@ if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
   python3 -m venv /tmp/.env_dolores
   source /tmp/.env_dolores/bin/activate
   pip install --no-cache-dir flask requests openai > /dev/null
-  cat > /tmp/server.py <<'PYCODE'
-#!/usr/bin/env python3
+  cat > /tmp/server.py <<'PYCODE'#!/usr/bin/env python3
 import os, json, requests
 from flask import Flask, request, Response, render_template_string
 
@@ -252,7 +251,7 @@ INDEX_HTML = """
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Bridge Ollama ↔ OpenAI</title>
+<title>🧠 Dolores ↔ GPT Bridge</title>
 
 <!-- KaTeX + Marked -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
@@ -261,48 +260,177 @@ INDEX_HTML = """
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 
 <style>
-  body { font-family: system-ui, monospace; background:#111; color:#eee; margin:0; padding:20px; }
-  #chat { background:#181818; padding:10px; border-radius:6px; min-height:300px; overflow-y:auto; }
-  .user { color:#6cf; margin-bottom:8px; }
-  .ollama { color:#8f8; margin-bottom:8px; }
-  .gpt { color:#fc8; margin-bottom:8px; }
-  textarea { width:100%; background:#222; color:#eee; border:none; padding:10px; border-radius:6px; }
-  #prompt { height:60px; margin-top:10px; }
-  #extra  { height:40px; font-size:0.9em; opacity:0.8; margin-top:5px; }
-  #extra:focus { opacity:1; }
-  button { margin:5px; padding:8px 15px; background:#333; color:#eee;
-           border:1px solid #555; cursor:pointer; border-radius:4px; }
-  button:hover { background:#444; }
-  #status { color:#888; margin-top:5px; font-style:italic; }
-  .message { padding:6px; border-bottom:1px solid #333; }
+  /* ===================== Thèmes ===================== */
+  :root {
+    /* Clair (par défaut) */
+    --bg:#f6f8fa; --panel:#ffffff; --text:#0b1220; --muted:#57606a;
+    --user:#175fe8; --ollama:#0a7f3f; --gpt:#8a5a00;
+    --border:#d0d7de; --shadow: #00000014;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d1117; --panel:#161b22; --text:#e6edf3; --muted:#8b949e;
+    --user:#4da3ff; --ollama:#7ee787; --gpt:#f0c674;
+    --border:#30363d; --shadow:#0005;
+  }
+
+  /* ===================== Layout général ===================== */
+  html,body{
+    margin:0; height:100%;
+    background:var(--bg); color:var(--text);
+    font:16px/1.6 system-ui,monospace;
+  }
+  #page{
+    width:90%;              /* => marges latérales = 5% */
+    margin:0 5%;
+    display:flex; flex-direction:column; align-items:center;
+    min-height:100%;
+  }
+  header{
+    width:100%;
+    max-width:1100px;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:24px 0 8px;
+  }
+  h2{
+    margin:0;
+    color:var(--user);
+    font-weight:650;
+  }
+  #themeToggle{
+    background:transparent; border:1px solid var(--border);
+    padding:8px 12px; border-radius:8px; cursor:pointer;
+    color:var(--text);
+  }
+
+  /* ===================== Zone de chat ===================== */
+  #chat{
+    width:100%; max-width:1100px;
+    flex:1;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:28px;
+    overflow-y:auto;
+    box-shadow:0 10px 30px var(--shadow), inset 0 0 1px var(--border);
+    scroll-behavior:smooth;
+    margin-bottom:20px;
+  }
+  .message{
+    margin:20px 0;              /* plus large */
+    max-width:78%;
+    padding:14px 18px;
+    border-radius:14px;
+    line-height:1.55;
+    word-wrap:break-word;
+    box-shadow:0 2px 4px var(--shadow);
+  }
+  .user{
+    align-self:flex-end;
+    background:color-mix(in oklab, var(--user) 12%, var(--panel));
+    color:var(--user);
+    border-top-right-radius:4px;
+    margin-left:auto;
+  }
+  .ollama{
+    background:color-mix(in oklab, var(--ollama) 12%, var(--panel));
+    border-top-left-radius:4px;
+    color:var(--ollama);
+  }
+  .gpt{
+    background:color-mix(in oklab, var(--gpt) 12%, var(--panel));
+    border-top-left-radius:4px;
+    color:var(--gpt);
+  }
+
+  /* ===================== Entrées ===================== */
+  textarea{
+    width:100%; max-width:1100px;
+    border:none; border-radius:10px;
+    background:color-mix(in oklab, var(--panel) 92%, var(--bg));
+    color:var(--text);
+    padding:14px 16px; margin-top:14px;
+    font-family:inherit;
+    font-size:1em;
+    resize:none;
+    box-shadow:0 0 0 1px var(--border);
+  }
+  textarea:focus{ outline:none; box-shadow:0 0 0 2px color-mix(in oklab, var(--user) 35%, var(--border)); }
+  #extra{ opacity:0.9; height:45px; }
+
+  /* ===================== Boutons ===================== */
+  #toolbar{
+    display:flex; flex-wrap:wrap; justify-content:center; gap:10px;
+    width:100%; max-width:1100px; margin-top:10px;
+  }
+  button{
+    background:color-mix(in oklab, var(--panel) 80%, var(--bg));
+    color:var(--text);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:10px 18px;
+    cursor:pointer;
+    font-family:inherit; font-size:0.95em;
+    transition:transform .12s ease, background .12s ease;
+  }
+  button:hover{ transform:translateY(-1px); }
+  #status{
+    width:100%; max-width:1100px; color:var(--muted);
+    font-style:italic; font-size:0.92em;
+    text-align:left; margin:10px 0 24px;
+  }
+  #copyok{ margin-left:6px; color:var(--ollama); font-size:0.9em; }
+  ::selection{ background:color-mix(in oklab, var(--user) 25%, transparent); }
 </style>
 </head>
 <body>
-<h2>🧠 Bridge Ollama ↔ OpenAI</h2>
+<div id="page">
+  <header>
+    <h2>🧠 Dolores ↔ GPT Bridge</h2>
+    <button id="themeToggle" onclick="toggleTheme()">🌙 Mode sombre</button>
+  </header>
 
-<div id="chat"></div>
+  <div id="chat"></div>
 
-<textarea id="prompt" placeholder="Écris ton message ici..."></textarea>
-<textarea id="extra" placeholder="(Optionnel) Instruction supplémentaire"></textarea><br/>
+  <textarea id="prompt" placeholder="💬 Écris ton message ici..."></textarea>
+  <textarea id="extra" placeholder="(Optionnel) Instruction supplémentaire..."></textarea>
 
-<button onclick="btnOllama()">Réponse Ollama</button>
-<button onclick="btnSubmitGPT()">Soumettre à GPT</button>
-<button onclick="btnReturnLocal()">Renvoyer au local</button>
-<button onclick="copyChat()">Copier la discussion</button>
-<span id="copyok" style="margin-left:8px;color:#8f8;"></span>
-<div id="status"></div>
+  <div id="toolbar">
+    <button onclick="btnOllama()">Réponse Ollama</button>
+    <button onclick="btnSubmitGPT()">Soumettre à GPT</button>
+    <button onclick="btnReturnLocal()">Renvoyer au local</button>
+    <button onclick="copyChat()">Copier la discussion</button>
+    <span id="copyok"></span>
+  </div>
+
+  <div id="status"></div>
+</div>
 
 <script>
 let lastUserPrompt = "";
 let lastLocalText = "";
 let lastGptText   = "";
 
-// ===== Markdown + KaTeX =====
+/* ===== Thème clair/sombre (clair par défaut) ===== */
+(function initTheme(){
+  const saved = localStorage.getItem("dolores_theme");
+  const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const theme = saved || "light";  // clair par défaut
+  document.documentElement.setAttribute("data-theme", theme === "dark" ? "dark" : "light");
+  document.getElementById("themeToggle").textContent = theme === "dark" ? "☀️ Mode clair" : "🌙 Mode sombre";
+})();
+function toggleTheme(){
+  const current = document.documentElement.getAttribute("data-theme") || "light";
+  const next = current === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  localStorage.setItem("dolores_theme", next);
+  document.getElementById("themeToggle").textContent = next === "dark" ? "☀️ Mode clair" : "🌙 Mode sombre";
+}
+
+/* ===== Markdown + KaTeX ===== */
 async function renderMarkdown(container, text) {
   if (!window.marked) return;
   marked.setOptions({ breaks: true, mangle: false, headerIds: false });
   container.innerHTML = marked.parse(text || "");
-
   if (typeof renderMathInElement === "function") {
     renderMathInElement(container, {
       delimiters: [
@@ -317,18 +445,18 @@ async function renderMarkdown(container, text) {
   }
 }
 
-// ===== Ajout de message =====
+/* ===== Ajout de message ===== */
 function addLine(roleClass, rawText, prefix="") {
   const chat = document.getElementById("chat");
   const div = document.createElement("div");
   div.classList.add("message", roleClass);
-  chat.appendChild(div);
   renderMarkdown(div, (prefix ? prefix + " " : "") + rawText);
+  chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
   return div;
 }
 
-// ===== Streaming =====
+/* ===== Streaming ===== */
 async function streamTo(url, payload, roleClass, statusLabel) {
   const status = document.getElementById("status");
   const chat = document.getElementById("chat");
@@ -337,18 +465,14 @@ async function streamTo(url, payload, roleClass, statusLabel) {
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify(payload)
   });
-
-  if (!resp.ok) throw new Error("Erreur HTTP : " + resp.status);
-
+  if (!resp.ok) { status.textContent = "⚠️ Erreur HTTP " + resp.status; return ""; }
   const reader = resp.body.getReader();
   const decoder = new TextDecoder("utf-8");
   const liveDiv = document.createElement("div");
   liveDiv.classList.add("message", roleClass);
   chat.appendChild(liveDiv);
-
   status.textContent = "⏳ " + statusLabel + "…";
   let collected = "";
-
   while (true) {
     const {value, done} = await reader.read();
     if (done) break;
@@ -357,61 +481,52 @@ async function streamTo(url, payload, roleClass, statusLabel) {
     await renderMarkdown(liveDiv, collected);
     chat.scrollTop = chat.scrollHeight;
   }
-
   status.textContent = "✅ " + statusLabel + " terminé";
   return collected.trim();
 }
 
-// ===== Actions =====
-async function btnOllama() {
+/* ===== Actions (inchangées) ===== */
+async function btnOllama(){
   const promptEl = document.getElementById("prompt");
   const prompt = promptEl.value.trim();
   if (!prompt) return;
-
   lastUserPrompt = prompt;
   addLine("user", prompt, "🧍");
   promptEl.value = "";
-
   const out = await streamTo("/api/ollama", { prompt }, "ollama", "Ollama");
   lastLocalText = out;
 }
 
-async function btnSubmitGPT() {
+async function btnSubmitGPT(){
   if (!lastUserPrompt && !lastLocalText) return;
   const extra = document.getElementById("extra").value.trim();
-
   const out = await streamTo("/api/openai", {
     user_prompt: lastUserPrompt,
     local_reply: lastLocalText,
     extra_instruction: extra
   }, "gpt", "GPT");
-
   lastGptText = out;
 }
 
-async function btnReturnLocal() {
+async function btnReturnLocal(){
   const toSend = lastGptText || document.getElementById("prompt").value.trim();
   if (!toSend) return;
   const out = await streamTo("/api/ollama", { prompt: toSend }, "ollama", "Ollama");
   lastLocalText = out;
 }
 
-async function copyChat() {
+async function copyChat(){
   const chatElem = document.getElementById("chat");
   const text = chatElem ? chatElem.innerText.trim() : "";
   const badge = document.getElementById("copyok");
-  if (!text) {
-    badge.textContent = "Rien à copier";
-    setTimeout(() => badge.textContent = "", 1200);
-    return;
-  }
+  if (!text) { badge.textContent = "Rien à copier"; setTimeout(()=>badge.textContent="", 1200); return; }
   try {
     await navigator.clipboard.writeText(text);
     badge.textContent = "📋 Copié";
-    setTimeout(() => badge.textContent = "", 1500);
+    setTimeout(()=>badge.textContent="", 1500);
   } catch {
     badge.textContent = "⚠️ Échec";
-    setTimeout(() => badge.textContent = "", 1500);
+    setTimeout(()=>badge.textContent="", 1500);
   }
 }
 </script>
@@ -421,6 +536,7 @@ async function copyChat() {
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, threaded=True)
+
 PYCODE
 
   pkill -f server.py || true
