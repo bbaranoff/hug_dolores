@@ -99,41 +99,43 @@ if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
   source /tmp/.env_dolores/bin/activate
   pip install --no-cache-dir flask requests openai > /dev/null
   cat > /tmp/server.py <<'PYCODE'
-  # === écriture du code Python ===#!/usr/bin/env python3
+ #!/usr/bin/env python3
 import os, json, requests
 from flask import Flask, request, Response, render_template_string, session
 
-# === Création de l'application ===
 app = Flask(__name__)
-app.secret_key = "dolores_local_secret"  # change cette clé en production
+app.secret_key = "dolores_local_secret"
 
-# === Configuration ===
 OLLAMA_HOST = "http://localhost:11434"
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-# === Gestion mémoire (session persistante par navigateur) ===
-def get_history():
-    """Récupère ou initialise l'historique persistant de la session."""
-    if "chat_history" not in session:
-        session["chat_history"] = []
-    return session["chat_history"]
 
-def save_history(hist):
+# === Historique : capture dans une variable locale ===
+def get_history_copy():
+    hist = session.get("chat_history", [])
+    if not isinstance(hist, list):
+        hist = []
+    return hist.copy()
+
+def save_history_copy(hist):
+    # Mise à jour de la session à la fin seulement (hors streaming)
     session["chat_history"] = hist
+    session.modified = True
 
-# === Streaming vers Ollama ===
+
+# === Streaming Ollama ===
 def stream_ollama(prompt: str):
-    hist = get_history()
+    hist = get_history_copy()         # Copie locale = sûr hors contexte
     hist.append({"role": "user", "content": prompt})
     data = {"model": OLLAMA_MODEL, "messages": hist, "stream": True}
     url = f"{OLLAMA_HOST}/api/chat"
+    full_reply = ""
 
     try:
         with requests.post(url, json=data, stream=True, timeout=120) as r:
             r.raise_for_status()
-            full_reply = ""
             for line in r.iter_lines(decode_unicode=True):
                 if not line:
                     continue
@@ -147,12 +149,16 @@ def stream_ollama(prompt: str):
                     yield chunk
                 if j.get("done"):
                     break
-            hist.append({"role": "assistant", "content": full_reply})
-            save_history(hist)
     except Exception as e:
         yield f"[Erreur Ollama] {e}"
 
-# === Streaming vers OpenAI ===
+    # On remet à jour la session *après* le streaming
+    hist.append({"role": "assistant", "content": full_reply})
+    with app.app_context():
+        save_history_copy(hist)
+
+
+# === Streaming OpenAI ===
 def stream_openai(prompt: str):
     if not OPENAI_API_KEY:
         yield "[⚠️ Aucun jeton OpenAI configuré]"
@@ -172,7 +178,8 @@ def stream_openai(prompt: str):
     except Exception as e:
         yield f"[Erreur OpenAI] {e}"
 
-# === Routes Flask ===
+
+# === Routes ===
 @app.route("/")
 def index():
     return render_template_string(INDEX_HTML)
@@ -180,6 +187,8 @@ def index():
 @app.route("/api/ollama", methods=["POST"])
 def api_ollama():
     prompt = request.json.get("prompt", "")
+    if not prompt:
+        return Response("[Erreur] Aucun prompt fourni.", mimetype="text/plain")
     return Response(stream_ollama(prompt), mimetype="text/plain")
 
 @app.route("/api/openai", methods=["POST"])
@@ -188,19 +197,15 @@ def api_openai():
     local_reply = request.json.get("local_reply", "")
     extra_instruction = request.json.get("extra_instruction", "").strip()
 
-    # Directives automatiques selon le flux
-    if extra_instruction.lower() == "gpt->dolores":
-        directive = "répond et synthétise"
-    else:
-        directive = "corrige et questionne"
+    directive = "répond et synthétise" if extra_instruction.lower() == "gpt->dolores" else "corrige et questionne"
 
     full_instruction = (
         f"L’utilisateur a posé :\n{user_prompt}\n\n"
         f"Le modèle local (Dolores) a répondu :\n{local_reply}\n\n"
         f"Analyse cette réponse, {directive}."
     )
-
     return Response(stream_openai(full_instruction), mimetype="text/plain")
+    
 # === FRONTEND HTML ===
 INDEX_HTML = """
 <!DOCTYPE html>
