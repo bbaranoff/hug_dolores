@@ -110,9 +110,6 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-app = Flask(__name__)
-app.secret_key = "dolores_local_secret"  # change cette clé sur ton instance
-
 # === Gestion de la mémoire ===
 def get_history():
     """Récupère ou initialise l'historique de session persistant (cookie signé)."""
@@ -181,6 +178,10 @@ def index():
 def api_ollama():
     prompt = request.json.get("prompt", "")
     return Response(stream_ollama(prompt), mimetype="text/plain")
+
+
+app = Flask(__name__)
+app.secret_key = "dolores_local_secret"  # change cette clé sur ton instance
 
 @app.route("/api/openai", methods=["POST"])
 def api_openai():
