@@ -384,11 +384,6 @@ INDEX_HTML = """
 </head>
 <body>
 <div id="page">
-  <header>
-    <h2>🧠 Dolores ↔ GPT Bridge</h2>
-    <button id="themeToggle" onclick="toggleTheme()">🌙 Mode sombre</button>
-  </header>
-
   <div id="chat"></div>
 
   <textarea id="prompt" placeholder="💬 Écris ton message ici..."></textarea>
