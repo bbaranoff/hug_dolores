@@ -371,7 +371,7 @@ echo "✅ Tout est prêt."
 
 # === Étape 6 : Lancement Ollama ===
 log "Lancement du serveur Ollama (port $PORT)..."
-$SUDO docker run -it --rm "${GPU_FLAG[@]}" \
+$SUDO docker run -it "${GPU_FLAG[@]}" \
   --net host \
   -v "$VOLUME":/root/.ollama \
   -e OLLAMA_KV_CACHE_TYPE="$CACHE_TYPE" \
