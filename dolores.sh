@@ -165,20 +165,27 @@ def index():
 def api_ollama():
     prompt = request.json.get("prompt", "")
     return Response(stream_ollama(prompt), mimetype="text/plain")
-
+    
 @app.route("/api/openai", methods=["POST"])
 def api_openai():
     user_prompt = request.json.get("user_prompt", "")
     local_reply = request.json.get("local_reply", "")
     extra_instruction = request.json.get("extra_instruction", "")
+    # --- Ajout des directives explicites ---
+    directive = "corrige et questionne"
+    if extra_instruction.strip().lower() == "gpt->dolores":
+        directive = "répond et synthétise"
+    elif extra_instruction.strip():
+        directive += f"; {extra_instruction}"
+
     full_instruction = (
         f"L’utilisateur a posé :\n{user_prompt}\n\n"
-        f"Le modèle local a répondu :\n{local_reply}\n\n"
-        "Analyse et améliore cette réponse."
+        f"Le modèle local (Dolores) a répondu :\n{local_reply}\n\n"
+        f"Analyse cette réponse, {directive}."
     )
-    if extra_instruction:
-        full_instruction += f"\nInstruction : {extra_instruction}"
+
     return Response(stream_openai(full_instruction), mimetype="text/plain")
+
 
 # === FRONTEND HTML ===
 INDEX_HTML = """
@@ -312,23 +319,27 @@ async function btnOllama() {
 
 async function btnSubmitGPT() {
   if (!lastUserPrompt && !lastLocalText) return;
-  const extra = document.getElementById("extra").value.trim();
-
+  const extra = document.getElementById("extra").value.trim() || "dolores->gpt";
   const out = await streamTo("/api/openai", {
     user_prompt: lastUserPrompt,
     local_reply: lastLocalText,
     extra_instruction: extra
   }, "gpt", "GPT");
-
   lastGptText = out;
 }
 
 async function btnReturnLocal() {
   const toSend = lastGptText || document.getElementById("prompt").value.trim();
   if (!toSend) return;
-  const out = await streamTo("/api/ollama", { prompt: toSend }, "ollama", "Ollama");
+  // on précise la direction opposée
+  const out = await streamTo("/api/openai", {
+    user_prompt: lastUserPrompt,
+    local_reply: toSend,
+    extra_instruction: "gpt->dolores"
+  }, "ollama", "Ollama");
   lastLocalText = out;
 }
+
 
 async function copyChat() {
   const chatElem = document.getElementById("chat");
