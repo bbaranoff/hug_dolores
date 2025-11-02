@@ -100,34 +100,35 @@ if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
   pip install --no-cache-dir flask requests openai > /dev/null
 
   # === écriture du code Python ===
-  cat > /tmp/server.py <<'PYCODE'
 #!/usr/bin/env python3
 import os, json, requests
-from flask import session
-app.secret_key = "dolores_local_secret"  # clé de session (à personnaliser)
+from flask import Flask, request, Response, render_template_string, session
 
-from flask import Flask, request, Response, render_template_string, g
-
+# === Configuration ===
 OLLAMA_HOST = "http://localhost:11434"
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 app = Flask(__name__)
+app.secret_key = "dolores_local_secret"  # change cette clé sur ton instance
 
-# === utilitaires ===
+# === Gestion de la mémoire ===
 def get_history():
-    """Récupère ou initialise l'historique de session (persiste entre requêtes)."""
+    """Récupère ou initialise l'historique de session persistant (cookie signé)."""
     if "chat_history" not in session:
         session["chat_history"] = []
     return session["chat_history"]
 
+def save_history(hist):
+    session["chat_history"] = hist
+
+# === Streaming depuis Ollama ===
 def stream_ollama(prompt: str):
-    """Dialogue avec Ollama en streaming."""
     hist = get_history()
     hist.append({"role": "user", "content": prompt})
-    url = f"{OLLAMA_HOST}/api/chat"
     data = {"model": OLLAMA_MODEL, "messages": hist, "stream": True}
+    url = f"{OLLAMA_HOST}/api/chat"
 
     try:
         with requests.post(url, json=data, stream=True, timeout=120) as r:
@@ -147,13 +148,12 @@ def stream_ollama(prompt: str):
                 if j.get("done"):
                     break
             hist.append({"role": "assistant", "content": full_reply})
-            session["chat_history"] = hist
-
+            save_history(hist)
     except Exception as e:
         yield f"[Erreur Ollama] {e}"
 
+# === Streaming depuis OpenAI ===
 def stream_openai(prompt: str):
-    """Dialogue avec OpenAI en streaming."""
     if not OPENAI_API_KEY:
         yield "[⚠️ Aucun jeton OpenAI configuré]"
         return
@@ -173,7 +173,6 @@ def stream_openai(prompt: str):
         yield f"[Erreur OpenAI] {e}"
 
 # === Routes principales ===
-
 @app.route("/")
 def index():
     return render_template_string(INDEX_HTML)
@@ -189,7 +188,7 @@ def api_openai():
     local_reply = request.json.get("local_reply", "")
     extra_instruction = request.json.get("extra_instruction", "").strip()
 
-    # === Directives de transfert ===
+    # === Directives automatiques ===
     if extra_instruction.lower() == "gpt->dolores":
         directive = "répond et synthétise"
     else:
@@ -202,6 +201,7 @@ def api_openai():
     )
 
     return Response(stream_openai(full_instruction), mimetype="text/plain")
+
 
 # === FRONTEND HTML (identique à ton original) ===
 INDEX_HTML = """
