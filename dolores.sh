@@ -102,8 +102,10 @@ if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
   # === écriture du code Python ===
   cat > /tmp/server.py <<'PYCODE'
 #!/usr/bin/env python3
-#!/usr/bin/env python3
 import os, json, requests
+from flask import session
+app.secret_key = "dolores_local_secret"  # clé de session (à personnaliser)
+
 from flask import Flask, request, Response, render_template_string, g
 
 OLLAMA_HOST = "http://localhost:11434"
@@ -115,10 +117,10 @@ app = Flask(__name__)
 
 # === utilitaires ===
 def get_history():
-    """Crée un historique indépendant par requête (stocké dans flask.g)."""
-    if not hasattr(g, "chat_history"):
-        g.chat_history = []
-    return g.chat_history
+    """Récupère ou initialise l'historique de session (persiste entre requêtes)."""
+    if "chat_history" not in session:
+        session["chat_history"] = []
+    return session["chat_history"]
 
 def stream_ollama(prompt: str):
     """Dialogue avec Ollama en streaming."""
@@ -145,6 +147,8 @@ def stream_ollama(prompt: str):
                 if j.get("done"):
                     break
             hist.append({"role": "assistant", "content": full_reply})
+            session["chat_history"] = hist
+
     except Exception as e:
         yield f"[Erreur Ollama] {e}"
 
