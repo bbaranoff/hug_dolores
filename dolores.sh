@@ -253,8 +253,6 @@ INDEX_HTML = """
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>🧠 Dolores ↔ GPT Bridge</title>
-
 <!-- KaTeX + Marked -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
