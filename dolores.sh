@@ -201,20 +201,20 @@ def api_openai():
     )
 
     return Response(stream_openai(full_instruction), mimetype="text/plain")
-
-
-
-# === FRONTEND HTML (identique à ton original) ===
+# === FRONTEND HTML ===
 INDEX_HTML = """
 <!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <title>Bridge Ollama ↔ OpenAI</title>
+
+<!-- KaTeX + Marked -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
 <style>
   body { font-family: system-ui, monospace; background:#111; color:#eee; margin:0; padding:20px; }
   #chat { background:#181818; padding:10px; border-radius:6px; min-height:300px; overflow-y:auto; }
@@ -234,9 +234,12 @@ INDEX_HTML = """
 </head>
 <body>
 <h2>🧠 Bridge Ollama ↔ OpenAI</h2>
+
 <div id="chat"></div>
+
 <textarea id="prompt" placeholder="Écris ton message ici..."></textarea>
 <textarea id="extra" placeholder="(Optionnel) Instruction supplémentaire"></textarea><br/>
+
 <button onclick="btnOllama()">Réponse Ollama</button>
 <button onclick="btnSubmitGPT()">Soumettre à GPT</button>
 <button onclick="btnReturnLocal()">Renvoyer au local</button>
@@ -249,10 +252,12 @@ let lastUserPrompt = "";
 let lastLocalText = "";
 let lastGptText   = "";
 
+// ===== Markdown + KaTeX =====
 async function renderMarkdown(container, text) {
   if (!window.marked) return;
   marked.setOptions({ breaks: true, mangle: false, headerIds: false });
   container.innerHTML = marked.parse(text || "");
+
   if (typeof renderMathInElement === "function") {
     renderMathInElement(container, {
       delimiters: [
@@ -267,6 +272,7 @@ async function renderMarkdown(container, text) {
   }
 }
 
+// ===== Ajout de message =====
 function addLine(roleClass, rawText, prefix="") {
   const chat = document.getElementById("chat");
   const div = document.createElement("div");
@@ -277,6 +283,7 @@ function addLine(roleClass, rawText, prefix="") {
   return div;
 }
 
+// ===== Streaming =====
 async function streamTo(url, payload, roleClass, statusLabel) {
   const status = document.getElementById("status");
   const chat = document.getElementById("chat");
@@ -285,14 +292,18 @@ async function streamTo(url, payload, roleClass, statusLabel) {
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify(payload)
   });
+
   if (!resp.ok) throw new Error("Erreur HTTP : " + resp.status);
+
   const reader = resp.body.getReader();
   const decoder = new TextDecoder("utf-8");
   const liveDiv = document.createElement("div");
   liveDiv.classList.add("message", roleClass);
   chat.appendChild(liveDiv);
+
   status.textContent = "⏳ " + statusLabel + "…";
   let collected = "";
+
   while (true) {
     const {value, done} = await reader.read();
     if (done) break;
@@ -301,40 +312,42 @@ async function streamTo(url, payload, roleClass, statusLabel) {
     await renderMarkdown(liveDiv, collected);
     chat.scrollTop = chat.scrollHeight;
   }
+
   status.textContent = "✅ " + statusLabel + " terminé";
   return collected.trim();
 }
 
+// ===== Actions =====
 async function btnOllama() {
   const promptEl = document.getElementById("prompt");
   const prompt = promptEl.value.trim();
   if (!prompt) return;
+
   lastUserPrompt = prompt;
   addLine("user", prompt, "🧍");
   promptEl.value = "";
+
   const out = await streamTo("/api/ollama", { prompt }, "ollama", "Ollama");
   lastLocalText = out;
 }
 
 async function btnSubmitGPT() {
   if (!lastUserPrompt && !lastLocalText) return;
-  const extra = "dolores->gpt";
+  const extra = document.getElementById("extra").value.trim();
+
   const out = await streamTo("/api/openai", {
     user_prompt: lastUserPrompt,
     local_reply: lastLocalText,
     extra_instruction: extra
   }, "gpt", "GPT");
+
   lastGptText = out;
 }
 
 async function btnReturnLocal() {
   const toSend = lastGptText || document.getElementById("prompt").value.trim();
   if (!toSend) return;
-  const out = await streamTo("/api/openai", {
-    user_prompt: lastUserPrompt,
-    local_reply: toSend,
-    extra_instruction: "gpt->dolores"
-  }, "ollama", "Ollama");
+  const out = await streamTo("/api/ollama", { prompt: toSend }, "ollama", "Ollama");
   lastLocalText = out;
 }
 
@@ -342,14 +355,18 @@ async function copyChat() {
   const chatElem = document.getElementById("chat");
   const text = chatElem ? chatElem.innerText.trim() : "";
   const badge = document.getElementById("copyok");
-  if (!text) { badge.textContent = "Rien à copier"; setTimeout(()=>badge.textContent="",1200); return; }
+  if (!text) {
+    badge.textContent = "Rien à copier";
+    setTimeout(() => badge.textContent = "", 1200);
+    return;
+  }
   try {
     await navigator.clipboard.writeText(text);
     badge.textContent = "📋 Copié";
-    setTimeout(()=>badge.textContent="",1500);
+    setTimeout(() => badge.textContent = "", 1500);
   } catch {
     badge.textContent = "⚠️ Échec";
-    setTimeout(()=>badge.textContent="",1500);
+    setTimeout(() => badge.textContent = "", 1500);
   }
 }
 </script>
