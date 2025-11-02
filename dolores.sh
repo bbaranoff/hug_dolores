@@ -103,7 +103,7 @@ if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
   cat > /tmp/server.py <<'PYCODE'
 #!/usr/bin/env python3
 import os, json, requests
-from flask import Flask, request, Response, render_template_string
+from flask import Flask, request, Response, render_template_string, g
 
 OLLAMA_HOST = "http://localhost:11434"
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
@@ -111,21 +111,30 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 app = Flask(__name__)
-chat_history = []  # mémoire persistante pour /api/chat
+
+# === utilitaires ===
+def get_history():
+    """Crée un historique indépendant par requête (stocké dans flask.g)."""
+    if not hasattr(g, "chat_history"):
+        g.chat_history = []
+    return g.chat_history
 
 def stream_ollama(prompt: str):
-    global chat_history
-    chat_history.append({"role": "user", "content": prompt})
+    """Dialogue avec Ollama en streaming."""
+    hist = get_history()
+    hist.append({"role": "user", "content": prompt})
     url = f"{OLLAMA_HOST}/api/chat"
-    data = {"model": OLLAMA_MODEL, "messages": chat_history, "stream": True}
+    data = {"model": OLLAMA_MODEL, "messages": hist, "stream": True}
+
     try:
-        with requests.post(url, json=data, stream=True) as r:
+        with requests.post(url, json=data, stream=True, timeout=120) as r:
+            r.raise_for_status()
             full_reply = ""
-            for line in r.iter_lines():
+            for line in r.iter_lines(decode_unicode=True):
                 if not line:
                     continue
                 try:
-                    j = json.loads(line.decode("utf-8"))
+                    j = json.loads(line)
                 except Exception:
                     continue
                 if "message" in j and "content" in j["message"]:
@@ -134,11 +143,12 @@ def stream_ollama(prompt: str):
                     yield chunk
                 if j.get("done"):
                     break
-            chat_history.append({"role": "assistant", "content": full_reply})
+            hist.append({"role": "assistant", "content": full_reply})
     except Exception as e:
         yield f"[Erreur Ollama] {e}"
 
 def stream_openai(prompt: str):
+    """Dialogue avec OpenAI en streaming."""
     if not OPENAI_API_KEY:
         yield "[⚠️ Aucun jeton OpenAI configuré]"
         return
@@ -157,6 +167,8 @@ def stream_openai(prompt: str):
     except Exception as e:
         yield f"[Erreur OpenAI] {e}"
 
+# === Routes principales ===
+
 @app.route("/")
 def index():
     return render_template_string(INDEX_HTML)
@@ -165,18 +177,18 @@ def index():
 def api_ollama():
     prompt = request.json.get("prompt", "")
     return Response(stream_ollama(prompt), mimetype="text/plain")
-    
+
 @app.route("/api/openai", methods=["POST"])
 def api_openai():
     user_prompt = request.json.get("user_prompt", "")
     local_reply = request.json.get("local_reply", "")
-    extra_instruction = request.json.get("extra_instruction", "")
-    # --- Ajout des directives explicites ---
-    directive = "corrige et questionne"
-    if extra_instruction.strip().lower() == "gpt->dolores":
+    extra_instruction = request.json.get("extra_instruction", "").strip()
+
+    # === Directives de transfert ===
+    if extra_instruction.lower() == "gpt->dolores":
         directive = "répond et synthétise"
-    elif extra_instruction.strip():
-        directive += f"; {extra_instruction}"
+    else:
+        directive = "corrige et questionne"
 
     full_instruction = (
         f"L’utilisateur a posé :\n{user_prompt}\n\n"
@@ -185,6 +197,7 @@ def api_openai():
     )
 
     return Response(stream_openai(full_instruction), mimetype="text/plain")
+
 
 
 # === FRONTEND HTML ===
