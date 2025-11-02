@@ -98,11 +98,14 @@ if [[ "$ENABLE_API" =~ ^[YyOo] ]]; then
   python3 -m venv /tmp/.env_dolores
   source /tmp/.env_dolores/bin/activate
   pip install --no-cache-dir flask requests openai > /dev/null
-
-  # === écriture du code Python ===
-#!/usr/bin/env python3
+  cat > /tmp/server.py <<'PYCODE'
+  # === écriture du code Python ===#!/usr/bin/env python3
 import os, json, requests
 from flask import Flask, request, Response, render_template_string, session
+
+# === Création de l'application ===
+app = Flask(__name__)
+app.secret_key = "dolores_local_secret"  # change cette clé en production
 
 # === Configuration ===
 OLLAMA_HOST = "http://localhost:11434"
@@ -110,9 +113,9 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "dolores")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-# === Gestion de la mémoire ===
+# === Gestion mémoire (session persistante par navigateur) ===
 def get_history():
-    """Récupère ou initialise l'historique de session persistant (cookie signé)."""
+    """Récupère ou initialise l'historique persistant de la session."""
     if "chat_history" not in session:
         session["chat_history"] = []
     return session["chat_history"]
@@ -120,7 +123,7 @@ def get_history():
 def save_history(hist):
     session["chat_history"] = hist
 
-# === Streaming depuis Ollama ===
+# === Streaming vers Ollama ===
 def stream_ollama(prompt: str):
     hist = get_history()
     hist.append({"role": "user", "content": prompt})
@@ -149,7 +152,7 @@ def stream_ollama(prompt: str):
     except Exception as e:
         yield f"[Erreur Ollama] {e}"
 
-# === Streaming depuis OpenAI ===
+# === Streaming vers OpenAI ===
 def stream_openai(prompt: str):
     if not OPENAI_API_KEY:
         yield "[⚠️ Aucun jeton OpenAI configuré]"
@@ -169,7 +172,7 @@ def stream_openai(prompt: str):
     except Exception as e:
         yield f"[Erreur OpenAI] {e}"
 
-# === Routes principales ===
+# === Routes Flask ===
 @app.route("/")
 def index():
     return render_template_string(INDEX_HTML)
@@ -179,17 +182,13 @@ def api_ollama():
     prompt = request.json.get("prompt", "")
     return Response(stream_ollama(prompt), mimetype="text/plain")
 
-
-app = Flask(__name__)
-app.secret_key = "dolores_local_secret"  # change cette clé sur ton instance
-
 @app.route("/api/openai", methods=["POST"])
 def api_openai():
     user_prompt = request.json.get("user_prompt", "")
     local_reply = request.json.get("local_reply", "")
     extra_instruction = request.json.get("extra_instruction", "").strip()
 
-    # === Directives automatiques ===
+    # Directives automatiques selon le flux
     if extra_instruction.lower() == "gpt->dolores":
         directive = "répond et synthétise"
     else:
@@ -202,6 +201,7 @@ def api_openai():
     )
 
     return Response(stream_openai(full_instruction), mimetype="text/plain")
+
 
 
 # === FRONTEND HTML (identique à ton original) ===
