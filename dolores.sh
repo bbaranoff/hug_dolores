@@ -550,9 +550,5 @@ echo "✅ Tout est prêt."
 log "Lancement du serveur Ollama (port $PORT)..."
 $SUDO docker run -it "${GPU_FLAG[@]}" \
   --net host \
-  -v "$VOLUME":/root/.ollama \
-  -e OLLAMA_KV_CACHE_TYPE="$CACHE_TYPE" \
-  -e OLLAMA_NUM_PARALLEL=1 \
-  -e OLLAMA_MAX_LOADED_MODELS=1 \
   "$IMAGE" \
   bash -lc 'ollama serve >/dev/null 2>&1 & sleep 2; exec ollama run dolores'
